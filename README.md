@@ -73,7 +73,7 @@ plugins only share common dependencies on the “docear_plugin_core” and the �
 
 This repository is a personal fork of the upstream
 [BeelGroup/Docear-Desktop](https://github.com/BeelGroup/Docear-Desktop)
-maintained by **李洋 &lt;liyangcrazy1989@sina.com&gt;** (`@LiYangChem` on GitHub).
+maintained by **@LiYangChem** on GitHub.
 Upstream contents above are kept verbatim; everything below is fork-specific.
 
 ## What this fork adds
@@ -187,7 +187,7 @@ Everything else under `docear-desktop/` is unchanged from upstream.
 
 ## Contact
 
-李洋 &lt;liyangcrazy1989@sina.com&gt; — open an issue on this fork or
+Open an issue on this fork or
 ping `@LiYangChem` on GitHub. Upstream issues still belong on
 [BeelGroup/Docear-Desktop/issues](https://github.com/BeelGroup/Docear-Desktop/issues).
 
