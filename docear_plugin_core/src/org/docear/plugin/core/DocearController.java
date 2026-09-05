@@ -1,20 +1,12 @@
 package org.docear.plugin.core;
 
-import java.awt.Color;
-import java.awt.Font;
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URI;
-import java.net.URL;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
@@ -23,11 +15,6 @@ import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import javax.swing.JEditorPane;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.event.HyperlinkEvent;
-import javax.swing.event.HyperlinkListener;
 
 import org.docear.plugin.core.event.DocearEvent;
 import org.docear.plugin.core.event.DocearEventQueue;
@@ -58,7 +45,6 @@ import org.freeplane.plugin.workspace.model.project.AWorkspaceProject;
  */
 public class DocearController implements IDocearEventListener {
 	static final String DOCEAR_FIRST_RUN_PROPERTY = "docear.already_initialized";
-	static final String DOCEAR_SERVICE_NOT_AVAILABLE_PROPERTY = "docear.service_not_available";
 	
 	private final static String DOCEAR_VERSION_NUMBER = "docear.version.number";
 	
@@ -94,7 +80,15 @@ public class DocearController implements IDocearEventListener {
 	
 	protected DocearController() {
 		firstRun = !DocearController.getPropertiesController().getBooleanProperty(DOCEAR_FIRST_RUN_PROPERTY);
-		checkServiceAvailability();
+		// OFFLINE-FIRST (P0-1, ported from Twigmark): never contact docear.org status
+		// endpoints at startup. The former checkServiceAvailability() call (sync, then
+		// daemonized by the DOCEAR-PERF FIX (A2)) fetched
+		// http://www.docear.org/services/status.php on every launch. The service is
+		// dead, so the request was pure startup cost. isServiceAvailable() now returns
+		// false permanently, which routes every caller (setup wizard, update check,
+		// recommendations, connection bar, preferences page) into the existing
+		// "service unavailable" branch. No code outside this class reads the
+		// docear.service_not_available property (verified by repo-wide grep).
 		setApplicationIdentifiers();
 		eventQueue.addEventListener(this);
 	}
@@ -397,117 +391,16 @@ public class DocearController implements IDocearEventListener {
 	}
 	
 	//TODO Service
-	public boolean isServiceAvailable(){		
-		return !DocearController.getPropertiesController().getBooleanProperty(DOCEAR_SERVICE_NOT_AVAILABLE_PROPERTY);
-	}
-	
-	//TODO Service
-	private void checkServiceAvailability(){
-		Map<String, String> serviceProperties = getServiceProperties();	
-		if(serviceProperties.get("webservice_status") == null) return;
-		if(serviceProperties.get("webservice_status").equalsIgnoreCase("0")){			
-			if(isServiceAvailable()){
-				DocearController.getPropertiesController().setProperty(DOCEAR_SERVICE_NOT_AVAILABLE_PROPERTY, true);
-				if(!isDocearFirstStart()){
-					showServiceMessage(serviceProperties.get("webservice_message"), serviceProperties.get("webservice_details_url"));
-				}
-			}
-		}
-		if(serviceProperties.get("webservice_status").equalsIgnoreCase("1")){
-			if(!isServiceAvailable()){
-				DocearController.getPropertiesController().setProperty(DOCEAR_SERVICE_NOT_AVAILABLE_PROPERTY, false);
-				if(!isDocearFirstStart()){
-					showServiceMessage(serviceProperties.get("webservice_message"), serviceProperties.get("webservice_details_url"));
-				}
-			}
-		}
-	}
-	
-	//TODO Service
-	private void showServiceMessage(String message, String detailURL){
-		
-	    JLabel label = new JLabel();
-	    Font font = label.getFont();
-	    
-	    StringBuffer style = new StringBuffer("font-family:" + font.getFamily() + ";");
-	    style.append("font-weight:" + (font.isBold() ? "bold" : "normal") + ";");
-	    style.append("font-size:" + font.getSize() + "pt;");
-
-	    
-	    JEditorPane ep = new JEditorPane("text/html", "<html><body style=\"" + style + "\" >" //
-	            + message +"<br><br>For further detail follow this link:  <a href=\""+detailURL+"\">"+detailURL+"</a>" //
-	            + "</body></html>");
-
-	    // handle link events
-	    ep.addHyperlinkListener(new HyperlinkListener()
-	    {
-	        @Override
-	        public void hyperlinkUpdate(HyperlinkEvent evt)
-	        {
-	            if (evt.getEventType().equals(HyperlinkEvent.EventType.ACTIVATED))
-					try {
-						Controller.getCurrentController().getViewController().openDocument(evt.getURL());
-					} catch (Exception e) {
-						LogUtils.warn(e);
-					}	                
-	        }
-	    });
-	    ep.setEditable(false);
-	    ep.setBackground(new Color(214,217,223,0));
-	    
-	    JOptionPane.showMessageDialog(null, ep);
-	}
-	
-	//TODO Service
-	private Map<String, String> getServiceProperties() {
-		URI statusURI = URI.create("http://www.docear.org/services/status.php");	        
-        Map<String, String> properties = new HashMap<String, String>();
-        boolean webService = false;
-        boolean version = false;
-        HttpURLConnection statusConnection = null;        
-		try {
-			statusConnection = (HttpURLConnection)statusURI.toURL().openConnection();
-			statusConnection.setRequestMethod("GET");
-			statusConnection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.95 Safari/537.11");
-			statusConnection.connect();
-			BufferedReader in = new BufferedReader(new InputStreamReader(statusConnection.getInputStream()));
-			String inputLine;
-	        while ((inputLine = in.readLine()) != null){
-	        	if(inputLine.contains("[Web services]")){
-	        		webService = true;
-	        		version = false;
-	        		continue;
-	        	}
-	        	if(inputLine.contains("[Version]")){
-	        		webService = false;
-	        		version = true;
-	        		continue;
-	        	}
-	        	inputLine = inputLine.replaceAll("\t/.*", "");
-	        	inputLine = inputLine.replaceAll("\"", "");
-	        	inputLine = inputLine.replaceAll("\t", "");
-        		String[] keyValuePair = inputLine.split("=");
-        		if(keyValuePair.length == 2){
-        			if(webService){
-    	        		properties.put("webservice_" + keyValuePair[0].trim(), keyValuePair[1].trim());
-    	        	}
-        			if(version){
-        				properties.put("version_" + keyValuePair[0].trim(), keyValuePair[1].trim());
-        			}
-        		}        	
-	        }
-	        in.close();
-		} catch (MalformedURLException e) {
-			LogUtils.warn(e);
-		} catch (IOException e) {
-			LogUtils.warn(e);
-		}
-		finally{
-			if(statusConnection != null){
-				statusConnection.disconnect();
-			}
-		}	
-		return properties;
+	// OFFLINE-FIRST (P0-1): cloud Docear services (login / registration / sync /
+	// status) are retired from this build. Returning false makes every caller take
+	// its existing offline branch instead of attempting docear.org requests:
+	// - ServiceController: skips UpdateCheck / Recommendations / Upload features
+	//   and the startup startRecommendationsRequest() network call
+	// - ServiceConfiguration: loads preferences_without_services.xml
+	// - DocearSetupWizardAction: wizard session uses LOCAL_USER (no login pages)
+	// - DocearUserController: workspace login bar is not installed
+	public boolean isServiceAvailable(){
+		return false;
 	}
 	
 	/***********************************************************************************

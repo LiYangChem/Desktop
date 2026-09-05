@@ -103,7 +103,14 @@ public class TreeView extends JPanel implements IWorkspaceView, ComponentCollaps
 		mTree.addMouseListener(getInputController());
 		mTree.addMouseMotionListener(getInputController());
 		mTree.addKeyListener(getInputController());
-		mTree.setRowHeight(18);
+		// FIX-2026-09-05: do NOT call mTree.setRowHeight(18).
+		// Setting a fixed row height overrides the renderer's preferred size
+		// and disables automatic font scaling. After DocearUiMetrics bumped the
+		// font scale to 1.5x the renderer wanted 31px per row, but setRowHeight
+		// clamped it to 18px and the text started overlapping itself.
+		// Leaving JTree in variable-height mode makes each row follow
+		// WorkspaceNodeRenderer.preferredSize, which is recomputed from the
+		// current tree font by every DocearUiInstaller.refresh() pass.
 		mTree.setShowsRootHandles(false);
 		mTree.setEditable(true);
 		

@@ -38,6 +38,7 @@ import javax.swing.JComponent;
 import javax.swing.JOptionPane;
 import javax.swing.text.html.parser.ParserDelegator;
 
+import org.freeplane.core.ui.DocearUiInstaller;
 import org.freeplane.core.ui.ShowSelectionAsRectangleAction;
 import org.freeplane.features.attribute.ModelessAttributeController;
 import org.freeplane.features.filter.FilterController;
@@ -56,7 +57,6 @@ import org.freeplane.features.styles.LogicalStyleFilterController;
 import org.freeplane.features.styles.MapViewLayout;
 import org.freeplane.features.text.TextController;
 import org.freeplane.features.time.TimeController;
-import org.freeplane.features.ui.FrameController;
 import org.freeplane.main.browsemode.BModeControllerFactory;
 import org.freeplane.view.swing.features.nodehistory.NodeHistory;
 import org.freeplane.view.swing.map.MapViewController;
@@ -190,7 +190,9 @@ public class FreeplaneApplet extends JApplet {
 		String lookAndFeel = "";
 		appletResourceController.setPropertyByParameter(this, "lookandfeel");
 		lookAndFeel = appletResourceController.getProperty("lookandfeel");
-		FrameController.setLookAndFeel(lookAndFeel);
+		// same install chain as the desktop starter: look and feel, scaled UI
+		// defaults and the ribbon UI delegate
+		DocearUiInstaller.install(lookAndFeel);
 	}
 
 	@Override

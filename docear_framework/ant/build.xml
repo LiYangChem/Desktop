@@ -11,6 +11,18 @@
 		   project.setNewProperty(attributes.get("property"), attributes.get("value").toLowerCase());
 		}
 	</scriptdef >
+
+	<scriptdef name="decrement" language="javascript">
+		<classpath>
+			<fileset dir="./lib" includes="*.jar" />
+		</classpath>
+		<attribute name="property" />
+		<attribute name="value" />
+		if(attributes.get("value") != null){
+		   var v = parseInt(attributes.get("value"), 10);
+		   project.setNewProperty(attributes.get("property"), String(v - 1));
+		}
+	</scriptdef >
 	
 	<property name="workspace" location=".." />
 	<property file="${workspace}/freeplane/viewer-resources/version.properties" />
@@ -347,9 +359,30 @@
 		<chmod file="${build}/${ApplicationNameToLowerCase}.sh" perm="ugo+rx" />
 	</target>
 
+	<!-- DOCEAR: stamps the version line for the splash screen.
+	     org.freeplane.core only sees its own resources in the OSGi runtime, so the docear
+	     version keys must live in freeplane/viewer-resources/version.properties. The
+	     final build number is read AFTER the whole build (build.number may be touched
+	     more than once during a full build), and the already-built freeplaneviewer.jar
+	     is patched in place. The displayed number is value-1, matching
+	     DocearController.setApplicationIdentifiers(). -->
+	<target name="sync_splash_version">
+		<property file="${workspace}/docear_plugin_core/resources/build.number" prefix="splash" />
+		<decrement property="splash.build.display" value="${splash.build.number}" />
+		<propertyfile file="${workspace}/freeplane/viewer-resources/version.properties">
+			<entry key="build_date" type="date" value="now" pattern="MM/dd/yyyy" />
+			<entry key="docear_version" operation="=" value="${docear.version.string}" />
+			<entry key="docear_version_status" operation="=" value="${docear.version.status}" />
+			<entry key="docear_build_number" operation="=" value="${splash.build.display}" />
+		</propertyfile>
+		<zip update="true" file="${build}/core/org.freeplane.core/lib/freeplaneviewer.jar">
+			<zipfileset file="${workspace}/freeplane/viewer-resources/version.properties" fullpath="version.properties" />
+		</zip>
+	</target>
+
 	<target name="build" depends="build_core, build_latex, build_svg, build_script, build_formula, build_bugreport, build_openmaps
 		   , build_workspace, build_docear_core, build_docear_services, build_docear_pdfutilities, build_docear_bibtex
-		   , build_launcher, git_version_info">
+		   , build_launcher, git_version_info, sync_splash_version">
 		<mkdir dir="${build.resources}" />
 		<copy todir="${build.resources}">
 			<fileset dir="${workspace}/freeplane/dist/resources" />

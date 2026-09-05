@@ -32,6 +32,7 @@ import java.awt.event.MouseEvent;
 import java.awt.geom.Rectangle2D;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.Properties;
 
 import javax.swing.ImageIcon;
 import javax.swing.JFrame;
@@ -79,6 +80,7 @@ public class FreeplaneSplashModern extends JWindow {
 		}
 		splashResource = ResourceController.getResourceController().getResource("/images/" + appName + "_splash.png");
 		splashImage = new ImageIcon(splashResource);
+		docearVersionText = loadDocearVersionText();
 		getRootPane().setOpaque(false);
 		final Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
 		final Dimension labelSize = new Dimension(splashImage.getIconWidth(), splashImage.getIconHeight());
@@ -106,13 +108,73 @@ public class FreeplaneSplashModern extends JWindow {
 
 	private final ImageIcon splashImage;
 
+	private final String docearVersionText;
+
 	private Integer mWidth3;
 	private URL splashResource;
+
+	/**
+	 * DOCEAR: reads version, build number and build date from /version.properties.
+	 * The docear_* keys in that file are synced into freeplane/viewer-resources by
+	 * docear_framework/ant/build.xml (target prepareVersion), because in the OSGi runtime
+	 * this class only sees the resources of the org.freeplane.core bundle.
+	 * Returns null for non-Docear builds (i.e. when docear_version is missing),
+	 * leaving stock Freeplane behaviour untouched.
+	 */
+	private String loadDocearVersionText() {
+		InputStream in = null;
+		try {
+			final URL versionUrl = ResourceController.getResourceController().getResource("/version.properties");
+			if (versionUrl == null) {
+				return null;
+			}
+			in = versionUrl.openStream();
+			final Properties versionProperties = new Properties();
+			versionProperties.load(in);
+			final String version = versionProperties.getProperty("docear_version");
+			if (version == null || version.length() == 0) {
+				return null;
+			}
+			final StringBuilder text = new StringBuilder(appName).append(' ').append(version);
+			final String status = versionProperties.getProperty("docear_version_status");
+			if (status != null && status.length() > 0) {
+				text.append(' ').append(status);
+			}
+			final String buildNumberKey = versionProperties.getProperty("docear_build_number");
+			if (buildNumberKey != null && buildNumberKey.length() > 0) {
+				try {
+					// already stored as the displayed number (build.number - 1, see DocearController)
+					text.append(" build ").append(Integer.parseInt(buildNumberKey.trim()));
+				}
+				catch (final NumberFormatException e) {
+				}
+			}
+			final String buildDate = versionProperties.getProperty("build_date");
+			if (buildDate != null && buildDate.length() > 0) {
+				text.append("  (").append(buildDate).append(')');
+			}
+			return text.toString();
+		}
+		catch (final Exception e) {
+			return null;
+		}
+		finally {
+			FileUtils.silentlyClose(in);
+		}
+	}
 
 	@Override
 	public void paint(final Graphics g) {
 		final Graphics2D g2 = (Graphics2D) g;
 		splashImage.paintIcon(this, g2, 0, 0);
+		if (docearVersionText != null) {
+			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+			final Font originalFont = g2.getFont();
+			g2.setColor(Color.WHITE);
+			g2.setFont(originalFont.deriveFont(Font.BOLD));
+			g2.drawString(docearVersionText, 10, getSize().height - 25);
+			g2.setFont(originalFont);
+		}
 		if(splashResource.getProtocol().equals("file"))
 			return;
 		if("Freeplane".equals(appName)) {

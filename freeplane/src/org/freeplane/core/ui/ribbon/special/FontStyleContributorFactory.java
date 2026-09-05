@@ -83,54 +83,63 @@ public class FontStyleContributorFactory implements IRibbonContributorFactory {
 				band.addFlowComponent(sizeComboWrapper);
 
 				JCommandButtonStrip fontResizeStrip = new JCommandButtonStrip();
-				AFreeplaneAction action = context.getBuilder().getMode().getAction("IncreaseNodeFontAction");				
+				AFreeplaneAction action = context.getBuilder().getMode().getAction("IncreaseNodeFontAction");
 				final JCommandToggleButton fontIncreaseButton = RibbonActionContributorFactory.createCommandToggleButton(action);
 				addDefaultToggleHandler(context, action, fontIncreaseButton);
+				RibbonActionContributorFactory.applyTopBarStripScaling(fontIncreaseButton);
 				fontResizeStrip.add(fontIncreaseButton);
-				
-				action = context.getBuilder().getMode().getAction("DecreaseNodeFontAction");				
+
+				action = context.getBuilder().getMode().getAction("DecreaseNodeFontAction");
 				final JCommandToggleButton fontDecreaseButton = RibbonActionContributorFactory.createCommandToggleButton(action);
-				addDefaultToggleHandler(context, action, fontDecreaseButton);				
+				addDefaultToggleHandler(context, action, fontDecreaseButton);
+				RibbonActionContributorFactory.applyTopBarStripScaling(fontDecreaseButton);
 				fontResizeStrip.add(fontDecreaseButton);
 				band.addFlowComponent(fontResizeStrip);
-				
+
 				JCommandButtonStrip styleStrip = new JCommandButtonStrip();
 
 				action = context.getBuilder().getMode().getAction("BoldAction");
 				final JCommandToggleButton boldButton = RibbonActionContributorFactory.createCommandToggleButton(action);
-				addDefaultToggleHandler(context, action, boldButton);				
+				addDefaultToggleHandler(context, action, boldButton);
+				RibbonActionContributorFactory.applyTopBarStripScaling(boldButton);
 				styleStrip.add(boldButton);
 
 				action = context.getBuilder().getMode().getAction("ItalicAction");
 				final JCommandToggleButton italicButton = RibbonActionContributorFactory.createCommandToggleButton(action);
 				addDefaultToggleHandler(context, action, italicButton);
+				RibbonActionContributorFactory.applyTopBarStripScaling(italicButton);
 				styleStrip.add(italicButton);
-				
+
 				action = context.getBuilder().getMode().getAction("NodeColorAction");
 				JCommandButton button = RibbonActionContributorFactory.createCommandButton(action);
 				addDefaultToggleHandler(context, action, button);
+				RibbonActionContributorFactory.applyTopBarStripScaling(button);
 				styleStrip.add(button);
-				
+
 				action = context.getBuilder().getMode().getAction("NodeBackgroundColorAction");
 				button = RibbonActionContributorFactory.createCommandButton(action);
 				addDefaultToggleHandler(context, action, button);
+				RibbonActionContributorFactory.applyTopBarStripScaling(button);
 				styleStrip.add(button);
-				
+
 				action = context.getBuilder().getMode().getAction("NodeColorBlendAction");
 				button = RibbonActionContributorFactory.createCommandButton(action);
 				addDefaultToggleHandler(context, action, button);
+				RibbonActionContributorFactory.applyTopBarStripScaling(button);
 				styleStrip.add(button);
-				
+
 				action = context.getBuilder().getMode().getAction("BlinkingNodeHookAction");
 				button = RibbonActionContributorFactory.createCommandButton(action);
 				addDefaultToggleHandler(context, action, button);
+				RibbonActionContributorFactory.applyTopBarStripScaling(button);
 				styleStrip.add(button);
-				
+
 				action = context.getBuilder().getMode().getAction("MapBackgroundColorAction");
 				button = RibbonActionContributorFactory.createCommandButton(action);
 				addDefaultToggleHandler(context, action, button);
+				RibbonActionContributorFactory.applyTopBarStripScaling(button);
 				styleStrip.add(button);
-								
+
 				band.addFlowComponent(styleStrip);
 				
 				final Container styleBox = uiFactory.createStyleBox();

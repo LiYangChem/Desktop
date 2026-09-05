@@ -144,7 +144,11 @@ class AttributeRegistryTable extends JTable {
 		selectAllButtonEditor = new ButtonEditor(new ToggleAllAction());
 		setDefaultEditor(IListModel.class, new ButtonEditor(editListAction));
 		setDefaultRenderer(IListModel.class, AttributeRegistryTable.editButtonRenderer);
-		setRowHeight(20);
+		// Docear: no setRowHeight() here. Calling it sets JTable.isRowHeightSet,
+		// which makes the table ignore the "Table.rowHeight" UI default for the
+		// rest of its life, so a runtime font scale change could never reach it.
+		// The default is installed from DocearUiMetrics.rowHeight() - the same
+		// value this call used to hard code - and it does follow the scale.
 		setRowSelectionAllowed(false);
 	}
 

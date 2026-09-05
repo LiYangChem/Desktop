@@ -87,7 +87,8 @@ class ConditionalStyleTable extends JTable {
 	    final TableColumnModel columnModel = getColumnModel();
 	    setAutoResizeMode(JTable.AUTO_RESIZE_OFF); 
 //	    setSelectionBackground(DefaultConditionRenderer.SELECTED_BACKGROUND);
-	    setRowHeight(20);
+	    // Docear: see AttributeRegistryTable - a setRowHeight() call would pin
+	    // this table to a fixed height and cut it off from the font scale.
 		conditionRenderer = new DefaultConditionRenderer(TextUtils.getText("always"), true);
 		columnModel.getColumn(1).setCellRenderer(conditionRenderer);
 		columnModel.getColumn(1).setCellEditor(new ConditionEditor());

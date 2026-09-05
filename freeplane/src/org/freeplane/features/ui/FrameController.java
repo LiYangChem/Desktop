@@ -59,6 +59,7 @@ import javax.swing.plaf.metal.MetalFileChooserUI;
 
 import org.freeplane.core.resources.NamedObject;
 import org.freeplane.core.resources.ResourceController;
+import org.freeplane.core.ui.DocearWin11LookAndFeel;
 import org.freeplane.core.ui.FixedBasicComboBoxEditor;
 import org.freeplane.core.ui.IUserInputListenerFactory;
 import org.freeplane.core.ui.components.ContainerComboBoxEditor;
@@ -179,6 +180,7 @@ abstract public class FrameController implements ViewController {
 		controller.setViewController(this);
 		controller.addAction(new ToggleFullScreenAction(this));
 		controller.addAction(new ToggleRibbonAction());
+		controller.addAction(new TopBarAppearanceAction());
 		controller.addAction(new CloseAction());
 		
 		controller.addAction(new ToggleMenubarAction(this));
@@ -544,9 +546,43 @@ abstract public class FrameController implements ViewController {
 		return propertyKeyPrefix;
 	}
 
+	/**
+	 * Resolves the configured {@code lookandfeel} value and makes the
+	 * corresponding look and feel current.
+	 * <p>
+	 * This is <b>step 1 (LAF)</b> of the unified install chain and is called
+	 * by {@link org.freeplane.core.ui.DocearUiInstaller#install(String)},
+	 * which afterwards installs the scaled UI defaults and the ribbon UI
+	 * delegate. Switching the look and feel at runtime goes through
+	 * {@link org.freeplane.core.ui.DocearUiInstaller#applyLookAndFeel(String)}.
+	 * <p>
+	 * Do not call this method directly to change the appearance: on its own it
+	 * neither applies the Docear UI metrics nor refreshes existing windows.
+	 */
 	public static void setLookAndFeel(final String lookAndFeel) {
 		try {
-			if (Compat.isMacOsX() || lookAndFeel.equals("default")) {
+			if (DocearWin11LookAndFeel.LAF_NAME.equalsIgnoreCase(lookAndFeel)
+			        || DocearWin11LookAndFeel.class.getName().equals(lookAndFeel)) {
+				// The Docear Win11 skin lives inside the org.freeplane.core OSGi
+				// bundle. UIManager.setLookAndFeel(String) resolves class names
+				// through the system class loader, which cannot see bundle
+				// classes, so the instance is created directly instead.
+				UIManager.setLookAndFeel(new DocearWin11LookAndFeel());
+				final Controller controller = Controller.getCurrentController();
+				// Persist the canonical VALUE of the drop-down entry: MModeController
+				// enumerates UIManager.getInstalledLookAndFeels() and the combo box
+				// uses the registered CLASS NAME as its value. Persisting anything
+				// else (e.g. the display name) makes addCurrentLookAndFeelIfNecessary
+				// append a second, identically-labelled entry to the drop-down.
+				final String canonicalClassName = DocearWin11LookAndFeel.class.getName();
+				if (controller != null
+				        && !canonicalClassName.equals(controller.getResourceController()
+				            .getProperty("lookandfeel"))) {
+					controller.getResourceController().setProperty("lookandfeel",
+					    canonicalClassName);
+				}
+			}
+			else if (Compat.isMacOsX() || lookAndFeel.equals("default")) {
 				UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
 			}
 			else {
@@ -573,14 +609,37 @@ abstract public class FrameController implements ViewController {
 		// Workaround for http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=7077418
 		// NullPointerException in WindowsFileChooserUI when system icons missing/invalid
 		// set FileChooserUI to MetalFileChooserUI if no JFileChooser can be created
-		try{
-			new JFileChooser();
-		}
-		catch (Throwable t){
+		// DOCEAR-PERF FIX (B1): the probe construction used to run synchronously on the
+		// OSGi startlevel thread (the de-facto startup thread). JFR profiling proved that
+		// "new JFileChooser()" triggers the Windows Shell COM icon enumeration
+		// (Win32ShellFolder2.getIcon via the Swing-Shell COM thread) and the startup
+		// thread blocked in FutureTask.get() for 20-63s
+		// (docs/startup-performance-analysis.md, root cause B). The probe now runs on a
+		// daemon thread. Where the bug 7077418 applies, the constructor throws
+		// immediately, so the MetalFileChooserUI fallback is still installed quickly;
+		// on healthy systems the probe result is "success" and no fallback is needed.
+		// As before, the probe does not run on the EDT.
+		final Thread fileChooserProbeThread = new Thread(new FileChooserBug7077418Probe(), "DocearFileChooserProbe");
+		fileChooserProbeThread.setDaemon(true);
+		fileChooserProbeThread.start();
+	}
+
+	/**
+	 * DOCEAR-PERF FIX (B1): probe body extracted unchanged from setLookAndFeel();
+	 * named nested class (instead of an anonymous class) so that the numbering of the
+	 * existing FrameController$1..$6 anonymous classes is not shifted.
+	 */
+	private static class FileChooserBug7077418Probe implements Runnable {
+		public void run() {
 			try{
-				UIManager.getLookAndFeelDefaults().put("FileChooserUI", MetalFileChooserUI.class.getName());
+				new JFileChooser();
 			}
-			catch (Throwable t1){
+			catch (Throwable t){
+				try{
+					UIManager.getLookAndFeelDefaults().put("FileChooserUI", MetalFileChooserUI.class.getName());
+				}
+				catch (Throwable t1){
+				}
 			}
 		}
 	}

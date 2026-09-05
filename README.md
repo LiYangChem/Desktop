@@ -27,6 +27,51 @@ Detailed design notes live in [`docs/`](docs/):
 - `docs/metadata-provider-phase1.md` / `phase2.md` / `phase3.md` — incremental dev logs.
 - `docs/portable-release.md` — release/distribution notes.
 
+## UI modernization (2026-09, branch `win11-ui`)
+
+A full pass over the Swing/Flamingo UI layer, adding a Windows 11 style
+theming + DPI/font-scaling foundation and fixing a series of long-standing
+Flamingo ribbon rendering bugs.
+
+**New UI framework** (`freeplane/src/org/freeplane/core/ui/`):
+
+| Component | Purpose |
+|-----------|---------|
+| `DocearUiTokens` / `DocearUiMetrics` | Central design tokens (UNIT, GAP, ICON_SIZE, …) and a global `fontScale()` multiplier applied to every scaled UI dimension. |
+| `UiFontScale` | Reads `-Ddocear.ui.fontscale=` and persists the user setting; scales every `*.font` UIManager key. |
+| `DocearUiDefaults` / `DocearUiInstaller` | Installs fonts, metrics and the ribbon skin at startup; re-applies scaling on runtime UI refreshes. |
+| `DocearWin11LookAndFeel` | Windows 11 Fluent-inspired skin (accent `#0067C0`, mica grey `#F3F3F3`, neutral strokes `#D6D6D6`). |
+| `RibbonAppearanceDialog` / `TopBarAppearanceAction` | User-facing dialog for ribbon icon size / font scale. |
+
+**Ribbon fixes** (`.../core/ui/ribbon/`):
+
+- `SmoothScalingResizableIcon` (new) — Flamingo's `ImageWrapperIcon` only ever
+  scales *down* (`scale > 1.0f` check in `renderImage`), so a 16 px source asked
+  for 32 px kept painting a centered 16 px image inside a 32 px box. The
+  replacement scales up *and* down with bilinear interpolation. This is also
+  why the configured ribbon icon size previously "did nothing".
+- `DocearRibbonUI.getTaskbarHeight()` now follows the configured icon size
+  (`max(scale(24), iconSize + 8)`) — Flamingo's `TaskbarLayout` otherwise
+  clamps every taskbar button to a fixed 24 px row and crops larger icons.
+- `FlowOneRowResizePolicy` (new) — `CoreRibbonResizePolicies` has no one-row
+  policy for flow bands; the Zoom band (and any future flow band) can now
+  request a single row, with graceful degradation to two rows / collapsed.
+- `RibbonActionContributorFactory` — strip buttons render with SMALL icon
+  dimensions (no more clipped glyphs at higher font scales); popup menu
+  buttons are excluded from top-bar icon scaling.
+- `MenuBuilder.addMenuItem` wraps menu icons in a fit-to-`ICON_SIZE` scaling
+  icon, so hi-res source PNGs (48 px) no longer inflate menu row heights.
+
+**Other UI fixes**: workspace tree row-height overlap (`TreeView`), JabRef
+entry-table font ignoring the global scale (`MainTable`), attribute/style
+tables, Zoom band layout.
+
+**Redrawn icons**: the six quick-access taskbar icons (new map, encrypt, open,
+save, save as, save all) are redrawn in a unified Win11 Fluent style and are
+now 48 px sources (down-scaled cleanly for strip/menu renderings, crisp at
+1.0x–2.0x font scale). The generator script and before/after preview live in
+the working tree's `laf_skin_research/redraw_win11_icons.py` (not committed).
+
 ## Wiki
 
 The fork maintains a GitHub Wiki with contributor-focused docs that don't
@@ -35,6 +80,10 @@ belong in the README:
 - [**Build, Runtime and Architecture**](https://github.com/LiYangChem/Desktop/wiki/Build,-Runtime-and-Architecture)
   — required toolchain, runtime requirements, OSGi bundle layering, and a
   module-by-module directory map.
+- [**UI Modernization & Flamingo Internals**](https://github.com/LiYangChem/Desktop/wiki/UI-Modernization-and-Flamingo-Internals)
+  — how the Docear UI scaling system works and the Flamingo ribbon/icon
+  mechanics discovered while rebuilding it (icon pipeline, taskbar layout,
+  band width allocation, resize policies, probe techniques).
 - [Wiki home](https://github.com/LiYangChem/Desktop/wiki) — sidebar + index.
 
 The wiki lives in a separate `Desktop.wiki` git repo and is published via

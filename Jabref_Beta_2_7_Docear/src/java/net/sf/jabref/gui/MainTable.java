@@ -1,6 +1,7 @@
 package net.sf.jabref.gui;
 
 import java.awt.Color;
+import java.awt.Font;
 import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -458,10 +459,52 @@ public class MainTable extends JTable {
 
     /**
      * updateFont
+     * <p>
+     * Docear: the entry table used to take its size from
+     * {@link GUIGlobals#CURRENTFONT} only. JabRef initialises that font from
+     * its own preference ({@code "fontSize"}, default 12) and never rescales
+     * it, so embedded in Docear the table kept 12 pt while everything else
+     * followed the global UI font scale.
+     * <p>
+     * The family and style of {@code GUIGlobals.CURRENTFONT} are kept - they
+     * are the user's own JabRef choice - but the size is taken from the look
+     * and feel default {@code Table.font}, which
+     * {@code org.freeplane.core.ui.DocearUiDefaults} has already scaled (it
+     * scales every {@code *.font} entry). For a plain JabRef run that size is
+     * the unscaled LAF size, so nothing changes there.
      */
     public void updateFont() {
-        setFont(GUIGlobals.CURRENTFONT);
-        setRowHeight(GUIGlobals.TABLE_ROW_PADDING + GUIGlobals.CURRENTFONT.getSize());
+        Font font = GUIGlobals.CURRENTFONT;
+        if (font == null) {
+            setFont(null);
+            return;
+        }
+        final Font lafTableFont = UIManager.getFont("Table.font");
+        if (lafTableFont != null && lafTableFont.getSize() != font.getSize()) {
+            font = font.deriveFont((float) lafTableFont.getSize());
+        }
+        setFont(font);
+        // The original formula is kept, but the row is never allowed to be
+        // shorter than the text it has to show: at large font scales the
+        // constant padding alone is smaller than the font metrics.
+        final int textHeight = getFontMetrics(font).getHeight();
+        setRowHeight(Math.max(GUIGlobals.TABLE_ROW_PADDING + font.getSize(), textHeight));
+    }
+
+    /**
+     * Docear: a look and feel change - and a font scale change, which
+     * {@code DocearUiInstaller} applies by re-installing the look and feel and
+     * refreshing every component tree - resets the table font and row height
+     * through the UI delegate. Re-applying {@link #updateFont()} here keeps
+     * the entry table in step with the rest of the UI; without it the row
+     * height stays at the value computed for the previous scale.
+     */
+    @Override
+    public void updateUI() {
+        super.updateUI();
+        if (GUIGlobals.CURRENTFONT != null) {
+            updateFont();
+        }
     }
 
     public void ensureVisible(int row) {

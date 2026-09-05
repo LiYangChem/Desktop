@@ -1,17 +1,23 @@
 package org.docear.plugin.bibtex.dialogs;
 
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 
+import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
+import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
+import javax.swing.SwingConstants;
 
+import org.docear.metadata.net.MetadataNetworkConfig;
 import org.docear.plugin.core.actions.OpenLogsFolderAction;
 import org.docear.plugin.core.ui.MultiLineActionLabel;
 import org.docear.plugin.core.ui.wizard.AWizardPage;
@@ -26,12 +32,6 @@ import com.jgoodies.forms.layout.ColumnSpec;
 import com.jgoodies.forms.layout.FormLayout;
 import com.jgoodies.forms.layout.RowSpec;
 
-import javax.swing.SwingConstants;
-
-import java.awt.FlowLayout;
-import java.net.URI;
-import java.awt.Component;
-
 public class MetaDataOptionsPage extends AWizardPage {
 	
 	public static final String DOCEAR_METADATA_MAX_RESULT = "docear_metadata_maxResult";
@@ -39,7 +39,10 @@ public class MetaDataOptionsPage extends AWizardPage {
 	public static final String DOCEAR_METADATA_SEARCH_DOCEAR = "docear_metadata_searchDocear";
 	public static final String DOCEAR_METADATA_SEARCH_SCHOLAR = "docear_metadata_searchScholar";
 	public static final String DOCEAR_METADATA_SEARCH_CROSSREF = "docear_metadata_searchCrossref";
-	public static final String DOCEAR_METADATA_SEARCH_DOI = "docear_metadata_searchDOI";
+	public static final String DOCEAR_METADATA_SEARCH_DOI = "docear_metadata_searchDoi";
+	public static final String DOCEAR_METADATA_PROXY_MODE = "docear_metadata_proxyMode";
+	public static final String DOCEAR_METADATA_PROXY_HOST = "docear_metadata_proxyHost";
+	public static final String DOCEAR_METADATA_PROXY_PORT = "docear_metadata_proxyPort";
 	private static final long serialVersionUID = 1L;
 	private JCheckBox checkBoxScholar;
 	private JCheckBox checkBoxCrossref;
@@ -47,6 +50,11 @@ public class MetaDataOptionsPage extends AWizardPage {
 	private JCheckBox checkBoxDocear;
 	private JSpinner spinnerMaxResult;
 	private JCheckBox checkBoxLogging;
+	private JRadioButton radioProxySystem;
+	private JRadioButton radioProxyNone;
+	private JRadioButton radioProxyCustom;
+	private JTextField fieldProxyHost;
+	private JTextField fieldProxyPort;
 	
 	public MetaDataOptionsPage() {
 		setBackground(Color.WHITE);
@@ -55,6 +63,10 @@ public class MetaDataOptionsPage extends AWizardPage {
 				ColumnSpec.decode("default:grow"),
 				FormFactory.RELATED_GAP_COLSPEC,},
 			new RowSpec[] {
+				FormFactory.RELATED_GAP_ROWSPEC,
+				FormFactory.DEFAULT_ROWSPEC,
+				FormFactory.RELATED_GAP_ROWSPEC,
+				RowSpec.decode("default:grow"),
 				FormFactory.RELATED_GAP_ROWSPEC,
 				FormFactory.DEFAULT_ROWSPEC,
 				FormFactory.RELATED_GAP_ROWSPEC,
@@ -79,29 +91,31 @@ public class MetaDataOptionsPage extends AWizardPage {
 				ColumnSpec.decode("default:grow"),
 				FormFactory.RELATED_GAP_COLSPEC,
 				ColumnSpec.decode("default:grow"),
+				FormFactory.RELATED_GAP_COLSPEC,
+				ColumnSpec.decode("default:grow"),
+				FormFactory.RELATED_GAP_COLSPEC,
+				ColumnSpec.decode("default:grow"),
 				FormFactory.RELATED_GAP_COLSPEC,},
 			new RowSpec[] {
 				FormFactory.RELATED_GAP_ROWSPEC,
 				FormFactory.DEFAULT_ROWSPEC,
-				FormFactory.RELATED_GAP_ROWSPEC,
-				FormFactory.DEFAULT_ROWSPEC,
 				FormFactory.RELATED_GAP_ROWSPEC,}));
-
+		
 		checkBoxScholar = new JCheckBox(TextUtils.getText("docear.metadata.extraction.sources.scholar"));
 		checkBoxScholar.setBackground(Color.WHITE);
 		panel.add(checkBoxScholar, "2, 2");
-
+		
 		checkBoxCrossref = new JCheckBox(TextUtils.getText("docear.metadata.extraction.sources.crossref"));
 		checkBoxCrossref.setBackground(Color.WHITE);
-		panel.add(checkBoxCrossref, "2, 4");
-
+		panel.add(checkBoxCrossref, "4, 2");
+		
 		checkBoxDoi = new JCheckBox(TextUtils.getText("docear.metadata.extraction.sources.doi"));
 		checkBoxDoi.setBackground(Color.WHITE);
-		panel.add(checkBoxDoi, "4, 4");
-
+		panel.add(checkBoxDoi, "6, 2");
+		
 		checkBoxDocear = new JCheckBox(TextUtils.getText("docear.metadata.extraction.sources.docear"));
 		checkBoxDocear.setBackground(Color.WHITE);
-		panel.add(checkBoxDocear, "4, 2");
+		panel.add(checkBoxDocear, "8, 2");
 		
 		JLabel labelSearchOptions = new JLabel(TextUtils.getText("docear.metadata.extraction.options.title"));
 		add(labelSearchOptions, "2, 6");
@@ -155,6 +169,74 @@ public class MetaDataOptionsPage extends AWizardPage {
 		checkBoxLogging.setBackground(Color.WHITE);
 		checkBoxLogging.setHorizontalAlignment(SwingConstants.TRAILING);
 		panel_1.add(checkBoxLogging, "4, 4");
+		
+		// network proxy section
+		JLabel labelProxy = new JLabel(TextUtils.getText("docear.metadata.extraction.proxy.title"));
+		add(labelProxy, "2, 10");
+		
+		JScrollPane scrollPane_2 = new JScrollPane();
+		add(scrollPane_2, "2, 12, fill, fill");
+		
+		JPanel panel_2 = new JPanel();
+		panel_2.setBackground(Color.WHITE);
+		scrollPane_2.setViewportView(panel_2);
+		panel_2.setLayout(new FormLayout(new ColumnSpec[] {
+				FormFactory.RELATED_GAP_COLSPEC,
+				ColumnSpec.decode("default:grow"),
+				FormFactory.RELATED_GAP_COLSPEC,
+				ColumnSpec.decode("default:grow"),
+				FormFactory.RELATED_GAP_COLSPEC,
+				ColumnSpec.decode("default:grow"),
+				FormFactory.RELATED_GAP_COLSPEC,
+				ColumnSpec.decode("default:grow"),
+				FormFactory.RELATED_GAP_COLSPEC,
+				ColumnSpec.decode("default:grow"),
+				FormFactory.RELATED_GAP_COLSPEC,},
+			new RowSpec[] {
+				FormFactory.RELATED_GAP_ROWSPEC,
+				FormFactory.DEFAULT_ROWSPEC,
+				FormFactory.RELATED_GAP_ROWSPEC,
+				FormFactory.DEFAULT_ROWSPEC,
+				FormFactory.RELATED_GAP_ROWSPEC,}));
+		
+		radioProxySystem = new JRadioButton(TextUtils.getText("docear.metadata.extraction.proxy.system"));
+		radioProxySystem.setBackground(Color.WHITE);
+		panel_2.add(radioProxySystem, "2, 2");
+		
+		radioProxyNone = new JRadioButton(TextUtils.getText("docear.metadata.extraction.proxy.none"));
+		radioProxyNone.setBackground(Color.WHITE);
+		panel_2.add(radioProxyNone, "4, 2");
+		
+		radioProxyCustom = new JRadioButton(TextUtils.getText("docear.metadata.extraction.proxy.custom"));
+		radioProxyCustom.setBackground(Color.WHITE);
+		panel_2.add(radioProxyCustom, "6, 2");
+		
+		ButtonGroup proxyGroup = new ButtonGroup();
+		proxyGroup.add(radioProxySystem);
+		proxyGroup.add(radioProxyNone);
+		proxyGroup.add(radioProxyCustom);
+		
+		JLabel labelProxyHost = new JLabel(TextUtils.getText("docear.metadata.extraction.proxy.host") + ":");
+		labelProxyHost.setBackground(Color.WHITE);
+		panel_2.add(labelProxyHost, "2, 4, right, default");
+		
+		fieldProxyHost = new JTextField();
+		fieldProxyHost.setColumns(12);
+		panel_2.add(fieldProxyHost, "4, 4, fill, default");
+		
+		JLabel labelProxyPort = new JLabel(TextUtils.getText("docear.metadata.extraction.proxy.port") + ":");
+		labelProxyPort.setBackground(Color.WHITE);
+		panel_2.add(labelProxyPort, "6, 4, right, default");
+		
+		fieldProxyPort = new JTextField();
+		fieldProxyPort.setColumns(6);
+		panel_2.add(fieldProxyPort, "8, 4, fill, default");
+		
+		radioProxyCustom.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				updateProxyFieldsEnabled();
+			}
+		});
 	}	
 
 	@Override
@@ -178,6 +260,15 @@ public class MetaDataOptionsPage extends AWizardPage {
 		this.spinnerMaxResult.setModel(new SpinnerNumberModel(properties.getIntProperty(DOCEAR_METADATA_MAX_RESULT, 3), 1, 50, 1));
 		this.checkBoxLogging.setSelected(properties.getBooleanProperty(DOCEAR_METADATA_DEBUG_LOGGING));
 		
+		MetadataNetworkConfig.Mode proxyMode = MetadataNetworkConfig.parseMode(
+				properties.getProperty(DOCEAR_METADATA_PROXY_MODE), MetadataNetworkConfig.DEFAULT_MODE);
+		this.radioProxySystem.setSelected(MetadataNetworkConfig.Mode.SYSTEM.equals(proxyMode));
+		this.radioProxyNone.setSelected(MetadataNetworkConfig.Mode.NONE.equals(proxyMode));
+		this.radioProxyCustom.setSelected(MetadataNetworkConfig.Mode.CUSTOM.equals(proxyMode));
+		this.fieldProxyHost.setText(properties.getProperty(DOCEAR_METADATA_PROXY_HOST, ""));
+		this.fieldProxyPort.setText(properties.getProperty(DOCEAR_METADATA_PROXY_PORT, ""));
+		updateProxyFieldsEnabled();
+		
 		session.getNextButton().addActionListener(new ActionListener() {			
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -187,8 +278,27 @@ public class MetaDataOptionsPage extends AWizardPage {
 				properties.setProperty(DOCEAR_METADATA_SEARCH_DOCEAR, checkBoxDocear.isSelected());
 				properties.setProperty(DOCEAR_METADATA_MAX_RESULT, spinnerMaxResult.getModel().getValue().toString());
 				properties.setProperty(DOCEAR_METADATA_DEBUG_LOGGING, checkBoxLogging.isSelected());
+				properties.setProperty(DOCEAR_METADATA_PROXY_MODE, selectedProxyMode());
+				properties.setProperty(DOCEAR_METADATA_PROXY_HOST, fieldProxyHost.getText());
+				properties.setProperty(DOCEAR_METADATA_PROXY_PORT, fieldProxyPort.getText());
 			}
 		});
+	}
+
+	private void updateProxyFieldsEnabled() {
+		boolean custom = radioProxyCustom.isSelected();
+		fieldProxyHost.setEnabled(custom);
+		fieldProxyPort.setEnabled(custom);
+	}
+
+	private String selectedProxyMode() {
+		if (radioProxySystem.isSelected()) {
+			return MetadataNetworkConfig.Mode.SYSTEM.name();
+		}
+		if (radioProxyNone.isSelected()) {
+			return MetadataNetworkConfig.Mode.NONE.name();
+		}
+		return MetadataNetworkConfig.Mode.CUSTOM.name();
 	}
 
 }

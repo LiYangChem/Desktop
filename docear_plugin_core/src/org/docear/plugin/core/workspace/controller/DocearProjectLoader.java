@@ -130,19 +130,26 @@ public class DocearProjectLoader extends ProjectLoader {
 	public synchronized LOAD_RETURN_TYPE loadProject(AWorkspaceProject project) throws IOException {
 		long time = System.currentTimeMillis();
 		try {
-			File projectSettings = new File(URIUtils.getAbsoluteFile(project.getProjectDataPath()),"settings.xml");
+			File projectSettings = new File(URIUtils.getAbsoluteFile(project.getProjectDataPath()), PROJECT_SETTINGS_FILE_NAME);
 			if(projectSettings.exists()) {
-				getDefaultResultProcessor().setProject(project);
-				load(projectSettings.toURI());
-				project.setLoaded();
-				return LOAD_RETURN_TYPE.EXISTING_PROJECT;
+				if(projectSettings.length() > 0) {
+					getDefaultResultProcessor().setProject(project);
+					load(projectSettings.toURI());
+					if(project.getModel().getRoot() != null) {
+						project.setLoaded();
+						return LOAD_RETURN_TYPE.EXISTING_PROJECT;
+					}
+					LogUtils.warn("project settings of '" + project.getProjectName() + "' contain no project root: " + projectSettings);
+				}
+				else {
+					LogUtils.warn("project settings of '" + project.getProjectName() + "' are empty (0 bytes): " + projectSettings);
+				}
+				quarantineProjectSettings(projectSettings);
 			}
-			else {
-				createDefaultProject((DocearWorkspaceProject)project);
-				((ProjectRootNode)project.getModel().getRoot()).setVersion(DocearWorkspaceProject.CURRENT_PROJECT_VERSION.getVersionString());
-				project.setLoaded();
-				return LOAD_RETURN_TYPE.NEW_PROJECT;
-			}
+			createDefaultProject((DocearWorkspaceProject)project);
+			((ProjectRootNode)project.getModel().getRoot()).setVersion(DocearWorkspaceProject.CURRENT_PROJECT_VERSION.getVersionString());
+			project.setLoaded();
+			return LOAD_RETURN_TYPE.NEW_PROJECT;
 		}
 		catch (Exception e) {
 			throw new IOExceptionWithCause(e);

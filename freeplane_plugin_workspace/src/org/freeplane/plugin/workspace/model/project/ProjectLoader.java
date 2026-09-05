@@ -1,10 +1,15 @@
 package org.freeplane.plugin.workspace.model.project;
 
 import java.io.BufferedInputStream;
+import java.io.Closeable;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.Writer;
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -38,6 +43,8 @@ public class ProjectLoader implements IProjectSettingsIOHandler {
 	public final static int WSNODE_FOLDER = 1;
 	public final static int WSNODE_LINK = 2;
 	public final static int WSNODE_ACTION = 4;
+
+	public final static String PROJECT_SETTINGS_FILE_NAME = "settings.xml";
 
 	private FolderCreator folderCreator = null;
 	private LinkCreator linkCreator = null;
@@ -148,25 +155,58 @@ public class ProjectLoader implements IProjectSettingsIOHandler {
 	
 	public synchronized LOAD_RETURN_TYPE loadProject(AWorkspaceProject project) throws IOException {
 		try {
-			File projectSettings = new File(URIUtils.getAbsoluteFile(project.getProjectDataPath()),"settings.xml");
+			File projectSettings = new File(URIUtils.getAbsoluteFile(project.getProjectDataPath()), PROJECT_SETTINGS_FILE_NAME);
 			if(projectSettings.exists()) {
-				getDefaultResultProcessor().setProject(project);
-				this.load(projectSettings.toURI());
-				project.setLoaded();
-				return LOAD_RETURN_TYPE.EXISTING_PROJECT;
+				if(projectSettings.length() > 0) {
+					getDefaultResultProcessor().setProject(project);
+					this.load(projectSettings.toURI());
+					if(project.getModel().getRoot() != null) {
+						project.setLoaded();
+						return LOAD_RETURN_TYPE.EXISTING_PROJECT;
+					}
+					LogUtils.warn("project settings of '" + project.getProjectName() + "' contain no project root: " + projectSettings);
+				}
+				else {
+					LogUtils.warn("project settings of '" + project.getProjectName() + "' are empty (0 bytes): " + projectSettings);
+				}
+				quarantineProjectSettings(projectSettings);
 			}
-			else {
-				createDefaultProject(project);
-				project.setLoaded();
-				return LOAD_RETURN_TYPE.NEW_PROJECT;
-			}
+			createDefaultProject(project);
+			project.setLoaded();
+			return LOAD_RETURN_TYPE.NEW_PROJECT;
 		}
 		catch (Exception e) {
 			throw new IOExceptionWithCause(e);
 		}
 	}
 
-	private void createDefaultProject(AWorkspaceProject project) {
+	/**
+	 * Moves an unusable settings.xml out of the way so that the project can be rebuilt from scratch. The file is
+	 * renamed (not deleted) to keep the evidence; if renaming is not possible it is deleted as a last resort.
+	 * 
+	 * @return the quarantine file or <code>null</code> if the settings file could not be moved.
+	 */
+	protected File quarantineProjectSettings(final File projectSettings) {
+		final File parent = projectSettings.getParentFile();
+		File quarantine = new File(parent, PROJECT_SETTINGS_FILE_NAME + ".corrupt-" + System.currentTimeMillis());
+		int counter = 1;
+		while(quarantine.exists()) {
+			quarantine = new File(parent, PROJECT_SETTINGS_FILE_NAME + ".corrupt-" + System.currentTimeMillis() + "-" + (counter++));
+		}
+		if(projectSettings.renameTo(quarantine)) {
+			LogUtils.warn("moved corrupt project settings to: " + quarantine);
+			return quarantine;
+		}
+		if(projectSettings.delete()) {
+			LogUtils.warn("deleted corrupt project settings: " + projectSettings);
+		}
+		else {
+			LogUtils.severe("could not remove corrupt project settings: " + projectSettings);
+		}
+		return null;
+	}
+
+	protected void createDefaultProject(AWorkspaceProject project) {
 		ProjectRootNode root = new ProjectRootNode();
 		root.setProjectID(project.getProjectID());				
 		root.setModel(project.getModel());
@@ -188,15 +228,99 @@ public class ProjectLoader implements IProjectSettingsIOHandler {
 		this.projectWriter.storeProject(writer, project);		
 	}
 
+	/**
+	 * Stores the project settings atomically:
+	 * <ol>
+	 * <li>the complete document is written to <code>settings.xml.tmp</code></li>
+	 * <li>the previous <code>settings.xml</code> is copied to <code>settings.xml.bak</code></li>
+	 * <li><code>settings.xml.tmp</code> is moved over <code>settings.xml</code></li>
+	 * </ol>
+	 * The former implementation opened <code>settings.xml</code> directly with a {@link FileWriter}, which truncates
+	 * the file the moment it is opened. A crash or a killed JVM during the write therefore left a 0 byte (or half
+	 * written) settings.xml behind; such a file silently parses to "no project root" and makes the workspace
+	 * unusable. Writing through a temporary file keeps the old settings intact until the new ones are complete.
+	 */
 	public void storeProject(AWorkspaceProject project) throws IOException {
-		File outFile = URIUtils.getAbsoluteFile(project.getProjectDataPath());
-		outFile = new File(outFile, "settings.xml");
-		if(!outFile.exists()) {
-			outFile.getParentFile().mkdirs();
-			outFile.createNewFile();
+		final File dataDir = URIUtils.getAbsoluteFile(project.getProjectDataPath());
+		if(!dataDir.exists() && !dataDir.mkdirs()) {
+			throw new IOException("cannot create project data directory: " + dataDir);
 		}
-		Writer writer = new FileWriter(outFile);
-		storeProject(writer, project);		
+		final File outFile = new File(dataDir, PROJECT_SETTINGS_FILE_NAME);
+		final File tmpFile = new File(dataDir, PROJECT_SETTINGS_FILE_NAME + ".tmp");
+		final File bakFile = new File(dataDir, PROJECT_SETTINGS_FILE_NAME + ".bak");
+
+		if(!tmpFile.exists() && !tmpFile.createNewFile()) {
+			throw new IOException("cannot create temporary project settings file: " + tmpFile);
+		}
+		// 1) write the complete document into the temporary file
+		boolean written = false;
+		try {
+			final Writer writer = new FileWriter(tmpFile);
+			storeProject(writer, project);
+			written = true;
+		}
+		finally {
+			if(!written) {
+				deleteQuietly(tmpFile);
+			}
+		}
+		if(!written || tmpFile.length() <= 0) {
+			deleteQuietly(tmpFile);
+			throw new IOException("project settings were written empty - previous settings kept: " + outFile);
+		}
+		// 2) keep the last known good settings as a backup
+		if(outFile.exists() && outFile.length() > 0) {
+			deleteQuietly(bakFile);
+			copyFile(outFile, bakFile);
+		}
+		// 3) replace the settings file with the temporary one
+		deleteQuietly(outFile);
+		if(!tmpFile.renameTo(outFile)) {
+			copyFile(tmpFile, outFile);
+			deleteQuietly(tmpFile);
+		}
+	}
+
+	private static void copyFile(final File source, final File target) throws IOException {
+		InputStream in = null;
+		OutputStream out = null;
+		try {
+			in = new FileInputStream(source);
+			out = new FileOutputStream(target);
+			final byte[] buffer = new byte[4096];
+			int read;
+			while((read = in.read(buffer)) > 0) {
+				out.write(buffer, 0, read);
+			}
+		}
+		finally {
+			closeQuietly(in);
+			closeQuietly(out);
+		}
+		if(target.length() != source.length()) {
+			throw new IOException("incomplete copy: " + source + " -> " + target);
+		}
+	}
+
+	private static void closeQuietly(final Closeable closeable) {
+		if(closeable == null) {
+			return;
+		}
+		try {
+			closeable.close();
+		}
+		catch (IOException e) {
+			LogUtils.warn(e);
+		}
+	}
+
+	private static void deleteQuietly(final File file) {
+		if(file == null || !file.exists()) {
+			return;
+		}
+		if(!file.delete()) {
+			LogUtils.warn("could not delete file: " + file);
+		}
 	}
 	
 	protected ReadManager getReadManager() {

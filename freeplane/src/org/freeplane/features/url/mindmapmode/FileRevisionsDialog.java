@@ -92,7 +92,8 @@ class FileRevisionsDialog extends JDialog {
 			getColumnModel().getColumn(0).setPreferredWidth((int) (width * 0.7));
 			getColumnModel().getColumn(1).setPreferredWidth((int) (width * 0.1));
 			getColumnModel().getColumn(2).setPreferredWidth((int) (width * 0.2));
-			setRowHeight(20);
+			// Docear: see AttributeRegistryTable - a setRowHeight() call would
+			// pin this table to a fixed height and cut it off from the scale.
 			setRowSelectionAllowed(true);
 			setFocusable(false);
 			setDefaultRenderer(Object.class, renderer);

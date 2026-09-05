@@ -80,8 +80,7 @@ import org.freeplane.features.map.MapModel;
 import org.freeplane.features.mode.Controller;
 import org.freeplane.features.mode.ModeController;
 import org.freeplane.n3.nanoxml.XMLElement;
-import org.pushingpixels.flamingo.api.common.AsynchronousLoadListener;
-import org.pushingpixels.flamingo.api.common.icon.ImageWrapperResizableIcon;
+import org.freeplane.core.ui.ribbon.SmoothScalingResizableIcon;
 
 public class MenuBuilder extends UIBuilder implements IKeyStrokeProcessor {
 	
@@ -640,14 +639,25 @@ public class MenuBuilder extends UIBuilder implements IKeyStrokeProcessor {
 		final String keyStrokeString = ResourceController.getResourceController().getProperty(shortcutKey);
 		//RIBBONS - to set the right icon size
 		if(item.getIcon() != null && item.getIcon() instanceof ImageIcon) {
+			// FIX-2026-09-05: menu icons must render at the UI icon size, not
+			// at the source PNG size. The taskbar icons are now 48 px sources
+			// (for crisp ribbon rendering), and ImageWrapperResizableIcon
+			// would lay the menu row out at 48 px (its preferredSize is not
+			// honored by JMenuItem). Wrap in SmoothScalingResizableIcon with
+			// an explicit fit-to-box target so menus stay at ICON_SIZE no
+			// matter the source resolution.
 			ImageIcon ico = (ImageIcon)item.getIcon();
-			ImageWrapperResizableIcon nuIco = ImageWrapperResizableIcon.getIcon(ico.getImage(), new Dimension(ico.getIconWidth(), ico.getIconHeight()));
-			nuIco.setPreferredSize(new Dimension(16, 16));
-			nuIco.addAsynchronousLoadListener(new AsynchronousLoadListener() {
-				public void completed(boolean success) {
-					item.repaint();
-				}
-			});
+			final Dimension box = DocearUiMetrics.dimension(DocearUiTokens.ICON_SIZE, DocearUiTokens.ICON_SIZE);
+			final int srcW = ico.getIconWidth();
+			final int srcH = ico.getIconHeight();
+			/* preserve the source aspect ratio inside the box */
+			final double fit = srcW > 0 && srcH > 0
+			    ? Math.min((double) box.width / srcW, (double) box.height / srcH)
+			    : 1.0;
+			final int targetW = Math.max(1, (int) Math.round(srcW * fit));
+			final int targetH = Math.max(1, (int) Math.round(srcH * fit));
+			final SmoothScalingResizableIcon nuIco = new SmoothScalingResizableIcon(
+			    ico.getImage(), targetW, targetH);
 			item.setIcon(nuIco);
 		}
 		final Node element = (Node) addElement(relativeKey, item, key, position);

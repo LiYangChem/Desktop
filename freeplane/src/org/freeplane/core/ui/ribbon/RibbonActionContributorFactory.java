@@ -17,6 +17,7 @@ import javax.swing.JButton;
 import javax.swing.JMenuItem;
 import javax.swing.JSeparator;
 import javax.swing.KeyStroke;
+import javax.swing.SwingUtilities;
 import javax.swing.event.TreeSelectionEvent;
 
 import org.freeplane.core.resources.ResourceController;
@@ -26,6 +27,8 @@ import org.freeplane.core.ui.IAcceleratorChangeListener;
 import org.freeplane.core.ui.ribbon.RibbonSeparatorContributorFactory.RibbonSeparator;
 import org.freeplane.core.ui.ribbon.StructureTree.StructurePath;
 import org.freeplane.core.ui.ribbon.event.AboutToPerformEvent;
+import org.freeplane.core.ui.DocearUiMetrics;
+import org.freeplane.core.ui.DocearUiTokens;
 import org.freeplane.core.util.Compat;
 import org.freeplane.core.util.LogUtils;
 import org.freeplane.core.util.TextUtils;
@@ -50,6 +53,171 @@ public class RibbonActionContributorFactory implements IRibbonContributorFactory
 	public static final String ACTION_NAME_PROPERTY = "ACTION_NAME";
 	public static final String ACTION_CHANGE_LISTENER = "ACTION_CHANGE_LISTENER";
 	public static final String MANDATORY_PROPERTY = "MANDATORY";
+
+	/** icon size in pixels of the top menu bar buttons */
+	public static final String TOP_BAR_ICON_SIZE_PROPERTY = "docear.topbar.iconsize";
+	private static final int DEFAULT_ICON_SIZE = 32;
+	/** lower/upper bound of the font-scaled icon size actually applied */
+	private static final int MIN_SCALED_ICON_SIZE = 16;
+	private static final int MAX_SCALED_ICON_SIZE = 64;
+	/** Vertical padding (px) left around a strip button icon. */
+	private static final int STRIP_ICON_PADDING_V = 4;
+	/**
+	 * Unscaled icon size of a button in a {@code JCommandButtonStrip}.
+	 * Flamingo draws those in the "small" state, which is 16 px for the
+	 * built-in icon sets; a strip row is one third of the band content
+	 * height, so a full size ({@link #DEFAULT_ICON_SIZE}) icon never fits.
+	 */
+	private static final int STRIP_BASE_ICON_SIZE = 16;
+
+	/**
+	 * icon size in pixels of the top menu bar buttons as configured by the
+	 * user (appearance dialog), i.e. the unscaled base value. The font
+	 * scaling of the whole application UI is handled globally by
+	 * {@link org.freeplane.core.ui.UiFontScale} (applied at startup).
+	 */
+	public static int getTopBarIconSize() {
+		try {
+			return Integer.parseInt(ResourceController.getResourceController().getProperty(
+			    TOP_BAR_ICON_SIZE_PROPERTY, String.valueOf(DEFAULT_ICON_SIZE)));
+		}
+		catch (NumberFormatException e) {
+			return DEFAULT_ICON_SIZE;
+		}
+	}
+
+	/**
+	 * The icon size actually applied to the ribbon buttons: the configured
+	 * base size multiplied by the global UI font scale.
+	 * <p>
+	 * Without this the icon keeps its pixel size while the button text grows
+	 * with the font scale, so at larger scales the text dominates the button
+	 * and the icon looks undersized (icon/text mismatch). Scaling the icon by
+	 * the same factor keeps the icon-to-text proportion constant at every
+	 * scale. The result is clamped to [16, 64] so extreme combinations of a
+	 * large base size and a large font scale cannot blow the band height up.
+	 */
+	public static int getScaledTopBarIconSize() {
+		final int configured = getTopBarIconSize();
+		final int scaled = DocearUiMetrics.scale(configured);
+		return Math.max(MIN_SCALED_ICON_SIZE, Math.min(MAX_SCALED_ICON_SIZE, scaled));
+	}
+
+	/**
+	 * Top menu bar (ribbon) only: enforce the user configured icon size on a
+	 * command button. The font scaling is handled globally by
+	 * {@link org.freeplane.core.ui.UiFontScale} (all L&F font keys are scaled
+	 * at startup, and Flamingo resolves button/band-title fonts through the
+	 * L&F keys), so this method intentionally does not touch any font - but
+	 * the icon is scaled along with the font (see
+	 * {@link #getScaledTopBarIconSize()}) so icon and text stay in proportion.
+	 */
+	public static void applyTopBarScaling(final AbstractCommandButton button) {
+		if (button == null) {
+			return;
+		}
+		assertTopBarIconDimension(button);
+	}
+
+	private static void assertTopBarIconDimension(final AbstractCommandButton button) {
+		if (button.getIcon() == null) {
+			return;
+		}
+		// deferred on purpose: some contributors override the display state
+		// (MEDIUM/SMALL) right after creating the button via the factory
+		// methods; the deferred assertion runs after those calls and forces
+		// the configured icon size through the Flamingo custom dimension API.
+		final int iconSize = getScaledTopBarIconSize();
+		SwingUtilities.invokeLater(new Runnable() {
+			public void run() {
+				button.updateCustomDimension(iconSize);
+			}
+		});
+	}
+
+	/**
+	 * Strip-aware counterpart of {@link #applyTopBarScaling(AbstractCommandButton)}.
+	 * <p>
+	 * A button inside a
+	 * {@link org.pushingpixels.flamingo.api.common.JCommandButtonStrip}
+	 * never gets the height it asks for. The chain in Flamingo 6.3 is:
+	 * <ol>
+	 * <li>{@code BasicFlowBandControlPanelUI.FlowControlPanelLayout.preferredLayoutSize}
+	 *     takes the band content height from the preferred height of a
+	 *     <b>BIG</b> dummy button &mdash; it is independent of anything the
+	 *     strip asks for;</li>
+	 * <li>{@code FlowControlPanelLayout.layoutContainer} then splits that
+	 *     height over the rows: {@code maxHeight = (availableHeight -
+	 *     vGap * (rowCount - 1)) / rowCount} whenever the content does not
+	 *     fit. Measured: 78 px content / 3 rows = <b>24 px</b> per row at
+	 *     scale 1.0, 114 px / 3 = <b>36 px</b> at scale 2.0;</li>
+	 * <li>{@code BasicCommandButtonStripUI.ButtonStripLayout.layoutContainer}
+	 *     finally forces every child to the strip's actual height, i.e. that
+	 *     row height.</li>
+	 * </ol>
+	 * So enlarging the button's preferred size (or the strip's) cannot work:
+	 * step 2 divides a height that step 1 fixed before the strip was ever
+	 * consulted. The only quantity that can be adapted is the <b>icon</b>.
+	 * <p>
+	 * {@link AbstractCommandButton#updateCustomDimension(int)} makes
+	 * {@code BasicCommandButtonUI.updateCustomDimension()} switch the button
+	 * to {@code CommandButtonDisplayState.FIT_TO_ICON} and set the icon to
+	 * exactly the requested size, so the icon is drawn at
+	 * {@code getScaledTopBarIconSize()} (32 px at 1.0x, 64 px at 2.0x) inside
+	 * a 24 / 36 px row &mdash; the icon is clipped top and bottom. This
+	 * method therefore requests the strip icon size
+	 * {@link #getScaledStripIconSize()} instead, which follows the same
+	 * "small button, small icon" proportion the ribbon uses everywhere else
+	 * (BIG 32 &harr; SMALL 16).
+	 * <p>
+	 * When the button has already been laid out (refresh passes run after
+	 * layout) the requested size is additionally clamped to the height the
+	 * band really granted, minus {@link #STRIP_ICON_PADDING_V}, so an
+	 * unusual combination of a large base icon size and a large font scale
+	 * still cannot overflow the row.
+	 * <p>
+	 * Deferred on purpose, exactly like
+	 * {@link #assertTopBarIconDimension(AbstractCommandButton)}:
+	 * {@code createCommandButton} schedules the full top bar size first, and
+	 * this call is made after it, so this one wins.
+	 */
+	public static void applyTopBarStripScaling(final AbstractCommandButton button) {
+		if (button == null) {
+			return;
+		}
+		final int iconSize = getScaledStripIconSize(button);
+		SwingUtilities.invokeLater(new Runnable() {
+			public void run() {
+				if (button.getIcon() != null) {
+					button.updateCustomDimension(iconSize);
+				}
+			}
+		});
+	}
+
+	/**
+	 * Icon size for a button inside a {@code JCommandButtonStrip}: the
+	 * Flamingo "small" icon size (16) scaled by the global font scale, and
+	 * clamped to {@code [MIN_SCALED_ICON_SIZE, MAX_SCALED_ICON_SIZE]}.
+	 * <p>
+	 * Deliberately <b>not</b> {@link #getScaledTopBarIconSize()}: that is the
+	 * size of a BIG button icon, and a strip row is only one third of the
+	 * band content height, so a full size icon never fits. 16 -&gt; 16 at
+	 * scale 1.0 and 16 -&gt; 32 at scale 2.0, which fits the measured 24 / 36
+	 * px rows.
+	 *
+	 * @param button the button the size is requested for; its current height,
+	 *        when already laid out, is used as an upper bound
+	 */
+	private static int getScaledStripIconSize(final AbstractCommandButton button) {
+		int size = DocearUiMetrics.scale(STRIP_BASE_ICON_SIZE);
+		final int granted = button.getHeight();
+		if (granted > 0) {
+			size = Math.min(size, Math.max(MIN_SCALED_ICON_SIZE, granted - STRIP_ICON_PADDING_V));
+		}
+		return Math.max(MIN_SCALED_ICON_SIZE, Math.min(MAX_SCALED_ICON_SIZE, size));
+	}
+
 	public static ResizableIcon BLANK_ACTION_ICON;
 	static {
 		URL location = ResourceController.getResourceController().getResource("/images/blank_icon_48x48.png");
@@ -101,9 +269,10 @@ public class RibbonActionContributorFactory implements IRibbonContributorFactory
 	public static JCommandButton createCommandButton(final AFreeplaneAction action) {
 		String title = getActionTitle(action);
 		ResizableIcon icon = getActionIcon(action);
-		
+
 		final JCommandButton button = new JCommandButton(title, icon);
-		
+		applyTopBarScaling(button);
+
 		updateRichTooltip(button, action, null);
 		button.addActionListener(new RibbonActionListener(action));
 		button.setFocusable(false);
@@ -113,9 +282,10 @@ public class RibbonActionContributorFactory implements IRibbonContributorFactory
 	public static JCommandToggleButton createCommandToggleButton(final AFreeplaneAction action) {
 		String title = getActionTitle(action);
 		ResizableIcon icon = getActionIcon(action);
-		
+
 		final JCommandToggleButton button = new JCommandToggleButton(title, icon);
-		
+		applyTopBarScaling(button);
+
 		updateRichTooltip(button, action, null);
 		button.addActionListener(new RibbonActionListener(action));
 		button.setFocusable(false);
@@ -125,9 +295,10 @@ public class RibbonActionContributorFactory implements IRibbonContributorFactory
 	public static JCommandMenuButton createCommandMenuButton(final AFreeplaneAction action) {
 		String title = getActionTitle(action);
 		ResizableIcon icon = getActionIcon(action);
-		
+
 		final JCommandMenuButton button = new JCommandMenuButton(title, icon);
-		
+		applyTopBarScaling(button);
+
 		updateRichTooltip(button, action, null);
 		button.addActionListener(new RibbonActionListener(action));
 		button.setFocusable(false);
@@ -137,9 +308,10 @@ public class RibbonActionContributorFactory implements IRibbonContributorFactory
 	public static JCommandToggleMenuButton createCommandToggleMenuButton(final AFreeplaneAction action) {
 		String title = getActionTitle(action);
 		ResizableIcon icon = getActionIcon(action);
-		
+
 		final JCommandToggleMenuButton button = new JCommandToggleMenuButton(title, icon);
-		
+		applyTopBarScaling(button);
+
 		updateRichTooltip(button, action, null);
 		button.addActionListener(new RibbonActionListener(action));
 		button.setFocusable(false);
@@ -188,14 +360,22 @@ public class RibbonActionContributorFactory implements IRibbonContributorFactory
 		ResizableIcon icon = null;
 		ImageIcon ico = (ImageIcon) action.getValue(Action.SMALL_ICON);
 		if(ico != null) {
-			icon = ImageWrapperResizableIcon.getIcon(ico.getImage(), new Dimension(ico.getIconWidth(), ico.getIconHeight()));
+			icon = new SmoothScalingResizableIcon(ico.getImage(), ico.getIconWidth(), ico.getIconHeight());
 		}
 		else {
-			String resource = ResourceController.getResourceController().getProperty(action.getIconKey(), null);			
+			String resource = ResourceController.getResourceController().getProperty(action.getIconKey(), null);
 			if (resource != null) {
 				URL location = ResourceController.getResourceController().getResource(resource);
 				if (location != null) {
-					icon = ImageWrapperResizableIcon.getIcon(location, new Dimension(16, 16));
+					final Dimension initialDim = DocearUiMetrics.dimension(
+					    DocearUiTokens.ICON_SIZE, DocearUiTokens.ICON_SIZE);
+					// SmoothScalingResizableIcon, NOT ImageWrapperResizableIcon:
+					// Flamingo's wrapper only scales its source image down, so a
+					// 16 px source PNG asked for a 32 px icon kept painting 16 px
+					// centered in the 32 px box and the user configured icon size
+					// never became visible.
+					final ImageIcon loaded = new ImageIcon(location);
+					icon = new SmoothScalingResizableIcon(loaded.getImage(), initialDim.width, initialDim.height);
 				}
 			}
 		}

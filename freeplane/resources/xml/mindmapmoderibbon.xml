@@ -476,6 +476,7 @@
 		    <ribbon_contributor	name="zoomContributor" />
 		    <ribbon_band name="view_mode" resize_policies="Mirror">
 			    <ribbon_action action="ToggleRibbonAction" priority="top"/>
+			    <ribbon_action action="TopBarAppearanceAction" priority="top"/>
 			    <ribbon_action action="CenterSelectedNodeAction" priority="top" >
 			        <ribbon_action action="SetBooleanPropertyAction.center_selected_node" />
 			    </ribbon_action>

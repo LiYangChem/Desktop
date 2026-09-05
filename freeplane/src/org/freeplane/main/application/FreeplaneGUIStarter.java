@@ -31,6 +31,8 @@ import java.util.Set;
 import javax.swing.JOptionPane;
 
 import org.freeplane.core.resources.ResourceController;
+import org.freeplane.core.ui.DocearUiInstaller;
+import org.freeplane.core.ui.DocearWin11LookAndFeel;
 import org.freeplane.core.ui.ShowSelectionAsRectangleAction;
 import org.freeplane.core.ui.components.UITools;
 import org.freeplane.core.util.Compat;
@@ -62,7 +64,6 @@ import org.freeplane.features.styles.LogicalStyleFilterController;
 import org.freeplane.features.styles.MapViewLayout;
 import org.freeplane.features.text.TextController;
 import org.freeplane.features.time.TimeController;
-import org.freeplane.features.ui.FrameController;
 import org.freeplane.features.url.mindmapmode.MFileManager;
 import org.freeplane.main.addons.AddOnsController;
 import org.freeplane.main.application.CommandLineParser.Options;
@@ -130,9 +131,26 @@ public class FreeplaneGUIStarter implements FreeplaneStarter {
 			applicationResourceController.init();
 			LogUtils.createLogger();
 			FreeplaneGUIStarter.showSysInfo();
-			final String lookandfeel = System.getProperty("lookandfeel", applicationResourceController
+			String lookandfeel = System.getProperty("lookandfeel", applicationResourceController
 			    .getProperty("lookandfeel"));
-			FrameController.setLookAndFeel(lookandfeel);
+			// One time migration: "nimbus" used to be the shipped default skin;
+			// "Docear Win11" replaces it. Persist the registered CLASS NAME -
+			// the preferences drop-down enumerates installed look-and-feels and
+			// uses the class name as its value, so a display name here would be
+			// appended as a second, identically-labelled entry. An explicit
+			// -Dlookandfeel=... override on the command line always wins.
+			if (System.getProperty("lookandfeel") == null
+			        && (lookandfeel == null || DocearWin11LookAndFeel.isLegacyDefault(lookandfeel))) {
+				lookandfeel = DocearWin11LookAndFeel.class.getName();
+				applicationResourceController.setProperty("lookandfeel", lookandfeel);
+			}
+			// Docear: a single call registers the bundled "Docear Win11" skin
+			// in UIManager, installs the look and feel, the scaled UI defaults
+			// (DocearUiMetrics) and the metric aware ribbon delegate - before
+			// any Swing component is created. Runtime changes of any of these
+			// go through the same class (DocearUiInstaller.applyFontScale /
+			// applyTopBarIconSize / applyLookAndFeel).
+			DocearUiInstaller.install(lookandfeel);
 			final JRibbonFrame frame = new JRibbonFrame("Freeplane");
 			frame.setName(UITools.MAIN_FREEPLANE_FRAME);
 			splash = new FreeplaneSplashModern(frame);

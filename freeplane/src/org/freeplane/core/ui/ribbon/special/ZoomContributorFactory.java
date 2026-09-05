@@ -13,6 +13,7 @@ import org.freeplane.core.ui.ribbon.ARibbonContributor;
 import org.freeplane.core.ui.ribbon.CurrentState;
 import org.freeplane.core.ui.ribbon.IChangeObserver;
 import org.freeplane.core.ui.ribbon.IRibbonContributorFactory;
+import org.freeplane.core.ui.ribbon.FlowOneRowResizePolicy;
 import org.freeplane.core.ui.ribbon.RibbonActionContributorFactory;
 import org.freeplane.core.ui.ribbon.RibbonActionContributorFactory.ActionAcceleratorChangeListener;
 import org.freeplane.core.ui.ribbon.RibbonActionContributorFactory.ActionChangeListener;
@@ -64,34 +65,51 @@ public class ZoomContributorFactory implements IRibbonContributorFactory {
 				band.addFlowComponent(zoomBox);
 				
 				JCommandButtonStrip strip = new JCommandButtonStrip();
-								
-				AFreeplaneAction action = context.getBuilder().getMode().getAction("ZoomInAction");				
-				JCommandButton button = RibbonActionContributorFactory.createCommandButton(action);				
+
+				AFreeplaneAction action = context.getBuilder().getMode().getAction("ZoomInAction");
+				JCommandButton button = RibbonActionContributorFactory.createCommandButton(action);
 				button.setDisplayState(CommandButtonDisplayState.SMALL);
+				RibbonActionContributorFactory.applyTopBarStripScaling(button);
 				getAccelChangeListener().addAction(action.getKey(), button);
 				addDefaultToggleHandler(context, action, button);
 				strip.add(button);
-				
-				action = context.getBuilder().getMode().getAction("ZoomOutAction");				
-				button = RibbonActionContributorFactory.createCommandButton(action);				
+
+				action = context.getBuilder().getMode().getAction("ZoomOutAction");
+				button = RibbonActionContributorFactory.createCommandButton(action);
 				button.setDisplayState(CommandButtonDisplayState.SMALL);
+				RibbonActionContributorFactory.applyTopBarStripScaling(button);
 				getAccelChangeListener().addAction(action.getKey(), button);
 				addDefaultToggleHandler(context, action, button);
 				strip.add(button);
-				
-				action = context.getBuilder().getMode().getAction("FitToPage");				
-				button = RibbonActionContributorFactory.createCommandButton(action);				
-				button.setDisplayState(CommandButtonDisplayState.MEDIUM);
+
+				action = context.getBuilder().getMode().getAction("FitToPage");
+				button = RibbonActionContributorFactory.createCommandButton(action);
+				// Docear: this button used to be MEDIUM, i.e. icon + label. At
+				// larger font scales the label alone was wider than the band
+				// the ribbon grants to the zoom band, so the strip overflowed
+				// the band (its buttons were laid out at negative x) or the
+				// strip was pushed to its own row and clipped. Keeping all
+				// three buttons SMALL keeps the zoom controls on one row.
+				button.setDisplayState(CommandButtonDisplayState.SMALL);
+				RibbonActionContributorFactory.applyTopBarStripScaling(button);
 				getAccelChangeListener().addAction(action.getKey(), button);
 				addDefaultToggleHandler(context, action, button);
 				strip.add(button);
-				
+
 				band.addFlowComponent(strip);
 				
-				List<RibbonBandResizePolicy> policies = new ArrayList<RibbonBandResizePolicy>();				
+				List<RibbonBandResizePolicy> policies = new ArrayList<RibbonBandResizePolicy>();
+				// Docear: keep the zoom controls on one row and make the band
+				// exactly as wide as its content needs. Flamingo has no
+				// single-row flow policy, so FlowOneRowResizePolicy asks for
+				// the side by side width of zoom box + button strip; when the
+				// ribbon runs out of width the band degrades to FlowTwoRows
+				// (two rows, but the policy width always fits them - no
+				// overflow) and then to the collapsed icon.
+				policies.add(new FlowOneRowResizePolicy(band.getControlPanel()));
 				policies.add(new CoreRibbonResizePolicies.FlowTwoRows(band.getControlPanel()));
 				policies.add(new IconRibbonBandResizePolicy(band.getControlPanel()));
-				band.setResizePolicies(policies);			
+				band.setResizePolicies(policies);
 				
 				parent.addChild(band, new ChildProperties(parseOrderSettings(attributes.getProperty("orderPriority", ""))));		    	
 			}

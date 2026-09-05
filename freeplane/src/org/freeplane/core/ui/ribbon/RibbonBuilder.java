@@ -2,7 +2,9 @@ package org.freeplane.core.ui.ribbon;
 
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
+import java.awt.Font;
 import java.awt.Window;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -28,6 +30,8 @@ import org.freeplane.core.ui.ribbon.special.ZoomContributorFactory;
 import org.freeplane.core.util.LogUtils;
 import org.freeplane.core.util.TextUtils;
 import org.freeplane.features.mode.ModeController;
+import org.pushingpixels.flamingo.api.common.AbstractCommandButton;
+import org.pushingpixels.flamingo.api.common.JCommandButtonStrip;
 import org.pushingpixels.flamingo.api.common.icon.ImageWrapperResizableIcon;
 import org.pushingpixels.flamingo.api.common.icon.ResizableIcon;
 import org.pushingpixels.flamingo.api.ribbon.JRibbon;
@@ -54,6 +58,11 @@ public class RibbonBuilder {
 	
 	public RibbonBuilder(ModeController mode, JRibbon ribbon) {
 		structure = new StructureTree();
+		// NOTE: the ribbon UI delegate (DocearRibbonUI, which scales the task
+		// tab row and the taskbar with the global font scale) is installed via
+		// the UIManager key "RibbonUI" in UiFontScale.applyGlobalFontScale(),
+		// because JRibbon already created its UI in its own constructor and
+		// JComponent.setUI() is protected.
 		this.rootContributor = new RootContributor(ribbon);
 		this.ribbon = ribbon;
 		this.mode = mode;
@@ -118,7 +127,11 @@ public class RibbonBuilder {
 		if(!isEnabled()) {
 			return;
 		}
-		
+		// font scaling is global: UiFontScale.applyGlobalFontScale() ran at
+		// startup (FreeplaneGUIStarter) right after the L&F installation, so
+		// Flamingo's internal dummy command buttons (which anchor the band
+		// control panel heights) already pick up the scaled L&F fonts here.
+
 		try {
 			getAcceleratorManager().loadAcceleratorPresets(new FileInputStream(getAcceleratorManager().getPresetsFile()));
 		}
@@ -136,9 +149,80 @@ public class RibbonBuilder {
 				Thread.currentThread().setContextClassLoader(contextClassLoader);
 			}
 		}
+		applyRibbonScaling(ribbon);
 		f.setMinimumSize(new Dimension(640,240));
 		f.pack();
-		
+
+	}
+
+	/**
+	 * Re-applies the user configurable icon size (see
+	 * RibbonActionContributorFactory) to the whole ribbon without rebuilding
+	 * it. Safe to call from any thread.
+	 * <p>
+	 * This is <b>one step</b> of the unified refresh, not a refresh of its
+	 * own: it only covers the ribbon icon dimension, so calling it on its own
+	 * would leave fonts, insets and every other window behind. The single
+	 * entry point that runs the complete refresh (metrics -&gt; component
+	 * tree -&gt; ribbon icons) is
+	 * {@link org.freeplane.core.ui.DocearUiInstaller#reapply()}, which calls
+	 * this method last because {@code updateComponentTreeUI} rebuilds the
+	 * ribbon's UI delegates.
+	 */
+	public void reapplyTopBarScaling() {
+		if (SwingUtilities.isEventDispatchThread()) {
+			applyTopBarScalingChanges();
+		}
+		else {
+			SwingUtilities.invokeLater(new Runnable() {
+				public void run() {
+					applyTopBarScalingChanges();
+				}
+			});
+		}
+	}
+
+	private void applyTopBarScalingChanges() {
+		// icon dimensions only - the fonts follow the global L&F scaling
+		// which is installed at startup and read at UI delegate creation
+		applyRibbonScaling(ribbon);
+		ribbon.revalidate();
+		ribbon.repaint();
+	}
+
+	/**
+	 * Top menu bar (ribbon) only: re-asserts the user configured icon size on
+	 * every command button (contributors may override the display state
+	 * after creation). Fonts are NOT touched here - they follow the global
+	 * L&F font scale (see UiFontScale). The application menu button is left
+	 * untouched.
+	 */
+	private void applyRibbonScaling(final Component component) {
+		if (component == null) {
+			return;
+		}
+		if (component instanceof JRibbonApplicationMenuButton) {
+			return;
+		}
+		if (component instanceof JCommandButtonStrip) {
+			// a strip button must keep its own (smaller) icon size: the
+			// plain top bar size does not fit the strip row and its icon
+			// would be clipped again on every refresh
+			final JCommandButtonStrip strip = (JCommandButtonStrip) component;
+			for (int i = 0; i < strip.getButtonCount(); i++) {
+				RibbonActionContributorFactory.applyTopBarStripScaling(strip.getButton(i));
+			}
+			return;
+		}
+		if (component instanceof AbstractCommandButton) {
+			RibbonActionContributorFactory.applyTopBarScaling((AbstractCommandButton) component);
+		}
+		if (component instanceof Container) {
+			final Component[] children = ((Container) component).getComponents();
+			for (final Component child : children) {
+				applyRibbonScaling(child);
+			}
+		}
 	}
 	
 	public boolean isEnabled() {
