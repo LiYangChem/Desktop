@@ -13,6 +13,7 @@ import java.io.StringReader;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -41,13 +42,15 @@ import net.sf.jabref.BibtexEntry;
 import net.sf.jabref.Globals;
 import net.sf.jabref.export.ExportFormats;
 import net.sf.jabref.export.layout.LayoutHelper;
-import net.sf.jabref.imports.BibtexParser;
 import net.sf.jabref.imports.ImportFormatReader;
-import net.sf.jabref.imports.ParserResult;
 import net.sf.jabref.imports.PdfXmpImporter;
 import net.sf.jabref.util.Pair;
 
 import org.docear.metadata.MetaDataSearchHub;
+import org.docear.metadata.adapter.CrossrefSearchEngine;
+import org.docear.metadata.adapter.CrossrefSource;
+import org.docear.metadata.adapter.DoiSearchEngine;
+import org.docear.metadata.adapter.DoiSource;
 import org.docear.metadata.data.MetaData;
 import org.docear.metadata.data.MetaData.AbstractSource;
 import org.docear.metadata.data.MetaDataSource;
@@ -61,6 +64,8 @@ import org.docear.metadata.events.MetaDataListener;
 import org.docear.metadata.extractors.ExtractorConfigKey;
 import org.docear.metadata.extractors.HtmlDataExtractor.CommonConfigKeys;
 import org.docear.metadata.extractors.MalformedConfigException;
+import org.docear.metadata.model.MetadataQuery;
+import org.docear.metadata.providers.CrossrefProvider;
 import org.docear.plugin.bibtex.ReferencesController;
 import org.docear.plugin.bibtex.actions.MetaDataAction.MetaDataActionObject;
 import org.docear.plugin.core.ui.MultiLineActionLabel;
@@ -116,6 +121,8 @@ public class MetaDataExtractorPage extends AWizardPage {
 	private WizardSession session;
 	private MetaDataSearchHub searchHub = new MetaDataSearchHub();
 	private String searchValue = "";
+	private MetadataQuery searchQuery;
+	private final MetadataCandidateAggregator candidateAggregator = new MetadataCandidateAggregator();
 	private JLabel labelWarning;
 	private JRadioButton radioButtonAttachOnly;
 	private JLabel labelSpinner;
@@ -366,64 +373,90 @@ public class MetaDataExtractorPage extends AWizardPage {
 	protected void searchMetadata() {
 		if(this.searchValue.equals(this.textFieldSearch.getText())) return;
 		this.searchValue = this.textFieldSearch.getText();
+		this.candidateAggregator.clear();
+		this.searchQuery = buildQuery(this.searchValue);
 		this.listModelFetchedResults.clearEntries();
 		this.listModelFetchedResults.fireDataChanged();
 		this.labelSpinner.setVisible(true);
 		requestCount = 0;
-		labelStatustext.setText("Finished " + requestCount + " of " + searchHub.getRegisteredEngines().size() + " Request(s).");
-		Set<Class<?>> sources = setupSources();
+		final Set<Class<?>> sources = setupSources();
+		labelStatustext.setText("Finished " + requestCount + " of " + sources.size() + " Request(s).");
+		if(sources.isEmpty()){
+			this.labelSpinner.setVisible(false);
+			labelStatustext.setText("Fetched " + listModelFetchedResults.getSize() + " entries.");
+		}
 		Map<ExtractorConfigKey, Object> options = setupSearchOptions();
 		try {
 			this.searchHub.asyncSearch(this.textFieldSearch.getText(), sources, options, new MetaDataListener() {
-				
+
 				@Override
 				public void onFinishedRequest(MetaDataEvent event) {
 					if(event instanceof FetchedResultsEvent) {
-						ArrayList<Pair<BibtexEntry,MetaDataSource>> entries = new ArrayList<Pair<BibtexEntry,MetaDataSource>>();
 						List<MetaData> results = ((FetchedResultsEvent)event).getResult();
 						for(MetaData result : results){
-							MetaDataSource source = result.getSource();
-							if(source instanceof ScholarSource){
-								if(searchValue.equals(result.getQuery())){
-									String bibtex = ((ScholarMetaData)result).getBibtex();
-									try {
-										ParserResult parsedBibtex = BibtexParser.parse(new StringReader(bibtex));
-										for(BibtexEntry entry : parsedBibtex.getDatabase().getEntries()){
-											entries.add(new Pair<BibtexEntry,MetaDataSource>(entry, source));
-										}
-										
-									} catch (IOException e) {
-										LogUtils.warn(e);
-									}	
-								}
+							// every engine result that is BibTeX-compatible
+							// (Google Scholar via ScholarMetaData, Crossref
+							// and DOI via the BibMetaData subclass) is handed
+							// to the aggregator, which scores, deduplicates
+							// and orders all candidates uniformly
+							if(result instanceof ScholarMetaData && searchValue.equals(result.getQuery())){
+								candidateAggregator.aggregate(Collections.singletonList(result), searchQuery);
 							}
 						}
-						
-						listModelFetchedResults.addEntries(entries);
+
+						// refresh the whole result list: cross-engine order
+						// by finalScore and deduplication only become stable
+						// when the accumulated set is re-emitted
+						listModelFetchedResults.clearEntries();
+						listModelFetchedResults.addEntries(candidateAggregator.getSortedEntryPairs());
 						requestCount++;
-						if(requestCount >= searchHub.getRegisteredEngines().size()){
-							labelStatustext.setText("Fetched " + listModelFetchedResults.getSize() + " entries.");														
+						if(requestCount >= sources.size()){
+							labelStatustext.setText("Fetched " + listModelFetchedResults.getSize() + " entries.");
 						}
 						else{
-							labelStatustext.setText("Finished " + requestCount + " of " + searchHub.getRegisteredEngines().size() + " Request(s).");
+							labelStatustext.setText("Finished " + requestCount + " of " + sources.size() + " Request(s).");
 						}
 						if(listModelFetchedResults.getSize() > 0 && listFetchedResults.getSelectedIndex() < 0){
 							listFetchedResults.setSelectedIndex(0);
-						}						
-					}					
+						}
+					}
 					labelSpinner.setVisible(false);
 				}
-				
+
 				@Override
 				public void onCaptchaRequested(final MetaDataEvent event) {
-					CaptchaRequestDialog.showDialog((CaptchaEvent)event);			
+					CaptchaRequestDialog.showDialog((CaptchaEvent)event);
 				}
 			});
-			
+
 		} catch (MalformedConfigException e) {
 			LogUtils.warn(e);
 		}
-		
+
+	}
+
+	/**
+	 * Builds the scoring query from the raw search text: a pasted DOI is
+	 * recognized and used as DOI expectation, everything else is treated as
+	 * a title query. Authors/year stay unknown (phase 3 scope: single
+	 * free-text input field).
+	 */
+	private MetadataQuery buildQuery(String searchText) {
+		MetadataQuery query = new MetadataQuery();
+		if (searchText == null) {
+			return query;
+		}
+		String trimmed = searchText.trim();
+		if (trimmed.length() == 0) {
+			return query;
+		}
+		String doi = CrossrefProvider.extractDoi(trimmed);
+		if (doi != null) {
+			query.setDoi(doi);
+		} else {
+			query.setTitle(trimmed);
+		}
+		return query;
 	}
 
 	private Map<ExtractorConfigKey, Object> setupSearchOptions() {
@@ -440,6 +473,12 @@ public class MetaDataExtractorPage extends AWizardPage {
 		ResourceController properties = Controller.getCurrentController().getResourceController();
 		if(properties.getBooleanProperty(MetaDataOptionsPage.DOCEAR_METADATA_SEARCH_SCHOLAR)){
 			sources.add(GoogleScholarSearchEngine.class);
+		}
+		if(properties.getBooleanProperty(MetaDataOptionsPage.DOCEAR_METADATA_SEARCH_CROSSREF)){
+			sources.add(CrossrefSearchEngine.class);
+		}
+		if(properties.getBooleanProperty(MetaDataOptionsPage.DOCEAR_METADATA_SEARCH_DOI)){
+			sources.add(DoiSearchEngine.class);
 		}
 		if(properties.getBooleanProperty(MetaDataOptionsPage.DOCEAR_METADATA_SEARCH_DOCEAR)){
 			//sources.add(DocearSearchEngine.class);
@@ -539,6 +578,8 @@ public class MetaDataExtractorPage extends AWizardPage {
 		this.pdfTitle = AnnotationController.getDocumentTitle(pdfFile);
 		this.xmpData = this.readXmpData(CoreUtils.resolveURI(pdfFile));
 		this.searchHub.registerSearchEngine(new GoogleScholarSearchEngine(null));
+		this.searchHub.registerSearchEngine(new CrossrefSearchEngine(null));
+		this.searchHub.registerSearchEngine(new DoiSearchEngine(null));
 		this.labelSpinner.setVisible(false);
 				
 		if(data.getResult().get(pdfFile).getEntryToUpdate() != null || data.getResult().get(pdfFile).isDuplicatePdf()){
@@ -771,9 +812,21 @@ public class MetaDataExtractorPage extends AWizardPage {
 			catch (Exception e) {
 			}
 			if(entry.v instanceof ScholarSource){
-				sb.insert(0, "<b>"+TextUtils.getText("docear.metadata.extraction.search.result.title") 
+				sb.insert(0, "<b>"+TextUtils.getText("docear.metadata.extraction.search.result.title")
 							+ " "
 							+ TextUtils.getText("docear.metadata.extraction.sources.scholar")
+							+ ":</b><br>");
+			}
+			else if(entry.v instanceof CrossrefSource){
+				sb.insert(0, "<b>"+TextUtils.getText("docear.metadata.extraction.search.result.title")
+							+ " "
+							+ TextUtils.getText("docear.metadata.extraction.sources.crossref")
+							+ ":</b><br>");
+			}
+			else if(entry.v instanceof DoiSource){
+				sb.insert(0, "<b>"+TextUtils.getText("docear.metadata.extraction.search.result.title")
+							+ " "
+							+ TextUtils.getText("docear.metadata.extraction.sources.doi")
 							+ ":</b><br>");
 			}
 			
