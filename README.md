@@ -4,6 +4,9 @@ This repository is a personal fork of the upstream
 [BeelGroup/Docear-Desktop](https://github.com/BeelGroup/Docear-Desktop)
 maintained by **@LiYangChem** on GitHub.
 Upstream contents above are kept verbatim; everything below is fork-specific.
+<img width="1910" height="1041" alt="image" src="https://github.com/user-attachments/assets/f20bf029-6a93-4f0e-accd-77b51de13b82" />
+<img width="1916" height="1043" alt="image" src="https://github.com/user-attachments/assets/97bec5f5-372a-475e-b144-25ea36f2cf06" />
+
 
 ## What this fork adds
 
