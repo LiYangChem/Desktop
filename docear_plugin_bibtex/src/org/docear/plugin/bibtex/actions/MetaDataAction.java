@@ -74,10 +74,27 @@ public final class MetaDataAction {
 			else{
 				wiz.setStartPage(metadataDescriptor.getIdentifier());
 				wiz.show();
+				saveDialogSize(wiz.getDialogSize());
 				break;
 			}
 		}				
 		return wiz.getSession().get(MetaDataActionObject.class);
+	}
+
+	/**
+	 * Persists the final dialog size (including manual resizes done by
+	 * dragging the wizard borders) so that the next invocation of the
+	 * "Create or update reference" dialog reopens with the same size.
+	 */
+	private static void saveDialogSize(java.awt.Dimension size) {
+		try {
+			org.freeplane.core.resources.ResourceController properties = org.freeplane.features.mode.Controller.getCurrentController().getResourceController();
+			properties.setProperty(MetaDataExtractorPage.DOCEAR_METADATA_DIALOG_WIDTH, String.valueOf(size.width));
+			properties.setProperty(MetaDataExtractorPage.DOCEAR_METADATA_DIALOG_HEIGHT, String.valueOf(size.height));
+		}
+		catch (Exception e) {
+			org.freeplane.core.util.LogUtils.warn(e);
+		}
 	}
 
 	public static class MetaDataActionObject{

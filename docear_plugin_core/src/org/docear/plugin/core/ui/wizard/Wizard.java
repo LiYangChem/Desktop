@@ -239,6 +239,14 @@ public class Wizard {
 	public boolean isResizable() {
 		return this.isResizable;
 	}
+
+	/**
+	 * Current size of the wizard dialog, e.g. after the user resized it
+	 * by dragging the right/bottom borders.
+	 */
+	public Dimension getDialogSize() {
+		return wizard.getSize();
+	}
 	
 	public WizardPageDescriptor getStartPage() {
 		if(this.startPageIdentifier == null) {

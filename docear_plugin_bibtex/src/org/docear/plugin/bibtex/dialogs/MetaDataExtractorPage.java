@@ -4,6 +4,7 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
@@ -93,6 +94,10 @@ public class MetaDataExtractorPage extends AWizardPage {
 	public static final String DOCEAR_METADATA_CREATE_EMPTY_ENTRY = "docear_metadata_createEmptyEntry";
 	public static final String DOCEAR_METADATA_CREATE_FETCHED_DATA_ENTRY = "docear_metadata_createFetchedDataEntry";
 	public static final String DOCEAR_METADATA_CREATE_ENTRY_OPTION = "docear_metadata_createEntryOption";
+	public static final String DOCEAR_METADATA_DIALOG_WIDTH = "docear_metadata_extractor_dialog_width";
+	public static final String DOCEAR_METADATA_DIALOG_HEIGHT = "docear_metadata_extractor_dialog_height";
+	private static final int DEFAULT_DIALOG_WIDTH = 1040;
+	private static final int DEFAULT_DIALOG_HEIGHT = 760;
 	private static final long serialVersionUID = 1L;
 	private JTextField textFieldSearch;
 	private JRadioButton radioButton_createBlank;
@@ -343,7 +348,7 @@ public class MetaDataExtractorPage extends AWizardPage {
 		listXmpData.setBorder(new EtchedBorder(EtchedBorder.LOWERED, null, null));
 		scrollPaneXmpData.setViewportView(listXmpData);	
 		
-		setPreferredSize(new Dimension(720, 550));
+		setPreferredSize(getRestoredDialogSize());
 		
 		radioButtonAttachOnly = new JRadioButton(TextUtils.getText("docear.metadata.extraction.attachOnly"));
 		radioButtonAttachOnly.addActionListener(new ActionListener() {			
@@ -360,6 +365,31 @@ public class MetaDataExtractorPage extends AWizardPage {
 		labelWarning.setForeground(Color.RED);
 		labelWarning.setHorizontalAlignment(SwingConstants.CENTER);
 		add(labelWarning, "2, 16");
+	}
+
+	/**
+	 * Restores the dialog size the user chose in a previous session.
+	 * The size is clamped to the screen so that the right/bottom resize
+	 * borders (the only sensor borders of the undecorated wizard window)
+	 * stay reachable for manual resizing.
+	 */
+	private static Dimension getRestoredDialogSize() {
+		int width = DEFAULT_DIALOG_WIDTH;
+		int height = DEFAULT_DIALOG_HEIGHT;
+		try {
+			ResourceController properties = Controller.getCurrentController().getResourceController();
+			width = properties.getIntProperty(DOCEAR_METADATA_DIALOG_WIDTH, DEFAULT_DIALOG_WIDTH);
+			height = properties.getIntProperty(DOCEAR_METADATA_DIALOG_HEIGHT, DEFAULT_DIALOG_HEIGHT);
+		}
+		catch (Exception e) {
+			LogUtils.warn(e);
+		}
+		Dimension screen = Toolkit.getDefaultToolkit().getScreenSize();
+		int maxWidth = (int) (screen.width * 0.9);
+		int maxHeight = (int) (screen.height * 0.85);
+		width = Math.max(640, Math.min(width, maxWidth));
+		height = Math.max(480, Math.min(height, maxHeight));
+		return new Dimension(width, height);
 	}
 
 	protected void callOptionsPage(ActionEvent e) {
