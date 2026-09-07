@@ -841,10 +841,13 @@ public class MetaDataExtractorPage extends AWizardPage {
 		
 		public Component getListCellRendererComponent(JList table, Object value, int index, final boolean isSelected, boolean hasFocus) {
 			StringBuilder sb = new StringBuilder();
-			sb.append("<html><body>");
+			// keep the entry text black even when the row is selected;
+			// the HTML body color overrides the LaF selection foreground
+			sb.append("<html><body style=\"color:black\">");
 			sb.append(value);
 			sb.append("</body></html>");
 			final JLabel label = (JLabel) super.getListCellRendererComponent(table, sb, index, isSelected, hasFocus);
+			label.setForeground(Color.BLACK);
 			if(index > 0) {
 				label.setBorder(new CompoundBorder(new MatteBorder(1, 0, 0, 0, (Color) new Color(0, 0, 0)), new EmptyBorder(10, 8, 10, 8)));
 			}
