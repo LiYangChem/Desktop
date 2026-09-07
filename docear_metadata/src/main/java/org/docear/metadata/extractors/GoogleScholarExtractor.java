@@ -56,6 +56,10 @@ public class GoogleScholarExtractor extends HtmlDataExtractor {
 	
 	public Collection<MetaData> search(final String query) {
 		ArrayList<MetaData> result = new ArrayList<MetaData>();		
+		long startedAt = System.currentTimeMillis();
+		if(this.debuglogging){
+			logger.info("[GoogleScholar] Query title = " + query);
+		}
 		try{
 			Map<String, String> cookies = getCookies(cookieFileName);
 			Response response = getConnection(BaseURL + "/scholar")
@@ -63,10 +67,13 @@ public class GoogleScholarExtractor extends HtmlDataExtractor {
 					.cookies(cookies)					
 					.execute();
 			if(this.debuglogging){
+				logger.info("[Network] Connection = SUCCESS (" + (System.currentTimeMillis() - startedAt) + " ms)");
+				logger.info("[HTTP] Status = " + response.statusCode());
+				logger.info("[HTTP] Content-Type = " + response.contentType());
 				logger.info("1. Response URL: "  + response.url().toString());
-				logger.info("1. Response headers: "  + response.headers().toString());
-				logger.info("1. Response body: "  + response.body().toString());
-				logger.info("1. Response cookies: "  + response.cookies().toString());
+				logger.info("1. Response headers = " + response.headers().size() + " entries");
+				logger.info("1. Response body size = " + response.body().length() + " chars");
+				logger.info("1. Response cookies = " + response.cookies().size() + " entries");
 			}
 			Document doc = response.parse();
 
@@ -97,10 +104,11 @@ public class GoogleScholarExtractor extends HtmlDataExtractor {
 							.cookies(cookies)					
 							.execute();
 					if(this.debuglogging){
+						logger.info("[State B] CAPTCHA page detected, retrying with form data");
 						logger.info("5. Response URL: "  + captchaResponse.url().toString());
-						logger.info("5. Response headers: "  + captchaResponse.headers().toString());
-						logger.info("5. Response body: "  + captchaResponse.body().toString());
-						logger.info("5. Response cookies: "  + captchaResponse.cookies().toString());
+						logger.info("5. Response headers = " + captchaResponse.headers().size() + " entries");
+						logger.info("5. Response body size = " + captchaResponse.body().length() + " chars");
+						logger.info("5. Response cookies = " + captchaResponse.cookies().size() + " entries");
 					}
 					doc = captchaResponse.parse();					
 				}
@@ -122,7 +130,7 @@ public class GoogleScholarExtractor extends HtmlDataExtractor {
 						if(this.debuglogging){
 							//logger.info("bibtex " + i + " Response URL: "  + response.url().toString());
 							//logger.info("bibtex " + i + " Response headers: "  + response.headers().toString());
-							logger.info("bibtex " + i + " Response body: "  + response.body().toString());
+							logger.info("bibtex " + i + " Response body size = " + response.body().length() + " chars");
 							//logger.info("bibtex " + i + " Response cookies: "  + response.cookies().toString());
 						}
 						String bibtex = response.body();
@@ -130,7 +138,8 @@ public class GoogleScholarExtractor extends HtmlDataExtractor {
 						if(bibtex.startsWith("@") && bibtex.endsWith("}")){
 							result.add(new ScholarMetaData(i, bibtex, query));
 						} else {
-							logger.info("link resolved to non-bibtex content: " + bibtex + "\nignoring.");
+							String preview = bibtex.length() > 80 ? bibtex.substring(0, 80) + "..." : bibtex;
+							logger.info("link resolved to non-bibtex content (" + bibtex.length() + " chars): " + preview + "\nignoring.");
 						}
 					} catch (IOException e) {
 						System.out.println(e.getMessage());
@@ -139,6 +148,13 @@ public class GoogleScholarExtractor extends HtmlDataExtractor {
 				}
 			}
 		} catch(HttpStatusException e) {
+			// State B: the network reach Google Scholar but it refused the
+			// request (403 / 429 / 503 / CAPTCHA). Never the same as a plain
+			// network failure, and never a parser failure.
+			if(this.debuglogging){
+				logger.info("[Network] Connection = SUCCESS (server responded)");
+				logger.info("[HTTP] Status = " + e.getStatusCode() + " (Google Scholar block / CAPTCHA / rate-limit)");
+			}
 			logger.info(e.getMessage(), e);
 			if(e.getStatusCode() == 503){
 				if(handleCaptchaRequest(e)) return search(query);
@@ -147,9 +163,17 @@ public class GoogleScholarExtractor extends HtmlDataExtractor {
 				if(requestNewCookie(cookieFileName) != null) return search(query);
 			}		
 		} catch (IOException e) {
+			// State A: connection could not be established at all
+			// (timeout / DNS / proxy error). Logged without any sensitive data.
+			if(this.debuglogging){
+				logger.info("[Network] Connection = FAILED (State A: " + e.getClass().getSimpleName() + ")");
+			}
 			System.out.println(e.getMessage());
 			logger.info(e.getMessage(), e);
 		}	
+		if(this.debuglogging){
+			logger.info("[Parser] Google Scholar result nodes = " + result.size());
+		}
 		FetchedResultsEvent event = new FetchedResultsEvent(result);
 		for(MetaDataListener listener : this.getListeners()){
 			listener.onFinishedRequest(event);
@@ -165,9 +189,9 @@ public class GoogleScholarExtractor extends HtmlDataExtractor {
 			Response response = getConnection(captchaUrl).ignoreHttpErrors(true).execute();
 			if(this.debuglogging){
 				logger.info("2. Response URL: "  + response.url().toString());
-				logger.info("2. Response headers: "  + response.headers().toString());
-				logger.info("2. Response body: "  + response.body().toString());
-				logger.info("2. Response cookies: "  + response.cookies().toString());
+				logger.info("2. Response headers = " + response.headers().size() + " entries");
+				logger.info("2. Response body size = " + response.body().length() + " chars");
+				logger.info("2. Response cookies = " + response.cookies().size() + " entries");
 			}
 			Document doc = response.parse();
 			
@@ -179,9 +203,9 @@ public class GoogleScholarExtractor extends HtmlDataExtractor {
 				Response imgResponse = getConnection(imageUrl).execute();				
 				if(this.debuglogging){
 					logger.info("3. Response URL: "  + imgResponse.url().toString());
-					logger.info("3. Response headers: "  + imgResponse.headers().toString());
-					logger.info("3. Response body: "  + imgResponse.body().toString());
-					logger.info("3. Response cookies: "  + imgResponse.cookies().toString());
+					logger.info("3. Response headers = " + imgResponse.headers().size() + " entries");
+					logger.info("3. Response body size = " + imgResponse.bodyAsBytes().length + " bytes");
+					logger.info("3. Response cookies = " + imgResponse.cookies().size() + " entries");
 				}
 				BufferedImage img = ImageIO.read(new ByteArrayInputStream(imgResponse.bodyAsBytes()));
 				
@@ -212,9 +236,7 @@ public class GoogleScholarExtractor extends HtmlDataExtractor {
 					if(!tokenElements.isEmpty()){
 						if(this.debuglogging){
 							logger.info("4. Response URL: "  + captchaResponse.url().toString());
-							logger.info("4. Response headers: "  + captchaResponse.headers().toString());
-							logger.info("4. Response body: "  + captchaResponse.body().toString());
-							logger.info("4. Response cookies: "  + captchaResponse.cookies().toString());
+							logger.info("4. Response body size: "  + captchaResponse.body().length() + " bytes");
 						}
 						String token = tokenElements.first().text();
 						return token;

@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.docear.metadata.events.MetaDataListener;
+import org.docear.metadata.net.MetadataNetworkConfig;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.slf4j.Logger;
@@ -27,6 +28,9 @@ public abstract class HtmlDataExtractor implements MetaDataExtractor{
 	private String cookieFolder = System.getProperty("user.home");
 	protected String searchValue = "";	
 	protected int maxResults = 3;
+	private String proxyMode = MetadataNetworkConfig.DEFAULT_MODE.name();
+	private String proxyHost = "";
+	private String proxyPort = "";
 	private Map<ExtractorConfigKey, Object> config = new HashMap<ExtractorConfigKey, Object>();
 	private ArrayList<MetaDataListener> listeners = new ArrayList<MetaDataListener>();
 	
@@ -38,7 +42,10 @@ public abstract class HtmlDataExtractor implements MetaDataExtractor{
 		FOLLOWREDIRECTS,
 		COOKIE_FOLDER,		
 		MAXRESULTS,
-		DEBUGLOGGING;
+		DEBUGLOGGING,
+		PROXY_MODE,
+		PROXY_HOST,
+		PROXY_PORT;
 	}
 	
 	public HtmlDataExtractor(){};
@@ -87,7 +94,16 @@ public abstract class HtmlDataExtractor implements MetaDataExtractor{
 							break;
 						case DEBUGLOGGING:
 							this.debuglogging = (Boolean) config.get(CommonConfigKeys.DEBUGLOGGING);						
-							break;	
+							break;
+						case PROXY_MODE:
+							this.proxyMode = (String) config.get(CommonConfigKeys.PROXY_MODE);
+							break;
+						case PROXY_HOST:
+							this.proxyHost = (String) config.get(CommonConfigKeys.PROXY_HOST);
+							break;
+						case PROXY_PORT:
+							this.proxyPort = (String) config.get(CommonConfigKeys.PROXY_PORT);
+							break;
 							
 						default:
 							break;					
@@ -97,6 +113,22 @@ public abstract class HtmlDataExtractor implements MetaDataExtractor{
 		}catch(ClassCastException e){
 			logger.error("Could not cast config parameter.", e);
 			throw new MalformedConfigException();
+		}
+		applyProxyConfig();
+	}
+
+	/**
+	 * Applies the proxy mode to the JVM's standard proxy mechanism. jsoup
+	 * 1.7.3 has no per-connection proxy API, so the only supported approach
+	 * is toggling the JVM proxy properties read by the default
+	 * ProxySelector. Called after config parsing so every extractor applies
+	 * the mode that was configured for it.
+	 */
+	private void applyProxyConfig() {
+		MetadataNetworkConfig.Mode mode = MetadataNetworkConfig.parseMode(this.proxyMode, MetadataNetworkConfig.DEFAULT_MODE);
+		MetadataNetworkConfig.apply(mode, this.proxyHost, this.proxyPort);
+		if (this.debuglogging) {
+			logger.info("[Network] Proxy mode = " + MetadataNetworkConfig.describe());
 		}
 	}
 
