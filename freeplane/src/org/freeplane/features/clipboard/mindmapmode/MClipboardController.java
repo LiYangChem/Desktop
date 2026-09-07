@@ -25,8 +25,10 @@ import java.awt.datatransfer.Transferable;
 import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.dnd.DnDConstants;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.io.Writer;
@@ -390,12 +392,7 @@ public class MClipboardController extends ClipboardController {
 
 		public ImageFlavorHandler(BufferedImage img) {
 			super();
-			BufferedImage fixedImg = new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_ARGB);
-			Graphics2D fig = fixedImg.createGraphics();
-			fig.drawImage(img, 0, 0, null);
-			fig.dispose();
-			fixedImg.flush();
-			this.image = fixedImg;
+			this.image = toARGB(img);
 		}
 
         public void paste(Transferable t, NodeModel target, boolean asSibling, boolean isLeft, int dropAction) {
@@ -441,6 +438,18 @@ public class MClipboardController extends ClipboardController {
 	            ImageIO.write(image, IMAGE_FORMAT, file);
 				final NodeModel node = mapController.newNode(file.getName(), target.getMap());
 				final ExternalResource extension = new ExternalResource(uri);
+				// Keep the node's on-screen size unchanged when the image was
+				// rasterized from a vector EMF at high resolution: scale the
+				// display size back down to the EMF's intrinsic device size, so
+				// higher pixel density does not make the image appear larger in
+				// the map. Plain bitmap pastes (displayWidth == -1) are unaffected.
+				final int displayWidth = org.freeplane.features.clipboard.EmfClipboardRenderer.getLastDisplayWidth();
+				if (displayWidth > 0 && image.getWidth() > displayWidth) {
+					final float zoom = (float) displayWidth / (float) image.getWidth();
+					if (zoom > 0.0f && zoom < 1.0f) {
+						extension.setZoom(zoom);
+					}
+				}
 				node.addExtension(extension);
 				mapController.insertNode(node, target, asSibling, isLeft, isLeft);
             }
@@ -449,6 +458,100 @@ public class MClipboardController extends ClipboardController {
             }
         }
     }
+	/**
+	 * Converts an arbitrary {@link BufferedImage} into a
+	 * {@link BufferedImage#TYPE_INT_ARGB} image while preserving the alpha
+	 * channel. If the source already carries alpha information (e.g. a PNG
+	 * decoded from the clipboard), transparent pixels stay transparent;
+	 * otherwise the pixels are copied unchanged.
+	 *
+	 * <p>This must NOT be implemented as a "replace black with transparent"
+	 * color-threshold hack, because legitimate black lines, text and fills
+	 * exist in chemical structures.</p>
+	 */
+	public static BufferedImage toARGB(final BufferedImage src) {
+		if (src == null) {
+			return null;
+		}
+		// Already carries an alpha channel: nothing to convert.
+		if (src.getType() == BufferedImage.TYPE_INT_ARGB) {
+			return src;
+		}
+		final BufferedImage argb = new BufferedImage(src.getWidth(), src.getHeight(), BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = argb.createGraphics();
+		try {
+			// No background fill and no composite override: the default
+			// SRC_OVER rule preserves the source alpha onto a fully
+			// transparent destination, so transparent areas stay transparent.
+			g.drawImage(src, 0, 0, null);
+		}
+		finally {
+			g.dispose();
+		}
+		return argb;
+	}
+
+	/**
+	 * Reads an image from a {@link Transferable} (the system clipboard or a
+	 * drag source). Prefers a flavor that carries real alpha information
+	 * (e.g. {@code image/png}); falls back to
+	 * {@link DataFlavor#imageFlavor} (CF_DIB on Windows, which loses the
+	 * alpha channel and renders transparent areas black) only when no better
+	 * flavor is available.
+	 */
+	public static BufferedImage readImageFromClipboard(final Transferable t) {
+		if (t == null) {
+			return null;
+		}
+		// 0. Prefer reading CF_ENHMETAFILE directly via JNA so ChemDraw's vector
+		//    structure is rasterized onto a clean WHITE background instead of the
+		//    black fill that the JVM's imageFlavor (CF_DIB) path produces.
+		final BufferedImage emf = org.freeplane.features.clipboard.EmfClipboardRenderer.tryReadWindowsEmf();
+		if (emf != null) {
+			return emf;
+		}
+		// 1. Prefer any "image/*" flavor other than the lossy "image/x-java-image".
+		final DataFlavor[] flavors = t.getTransferDataFlavors();
+		if (flavors != null) {
+			for (final DataFlavor flavor : flavors) {
+				final String mimeType = flavor.getMimeType();
+				if (mimeType == null || !mimeType.startsWith("image/") || "image/x-java-image".equals(mimeType)) {
+					continue;
+				}
+				try {
+					final Object data = t.getTransferData(flavor);
+					BufferedImage image = null;
+					if (data instanceof InputStream) {
+						image = ImageIO.read((InputStream) data);
+					}
+					else if (data instanceof byte[]) {
+						image = ImageIO.read(new ByteArrayInputStream((byte[]) data));
+					}
+					if (image != null) {
+						return image;
+					}
+				}
+				catch (final UnsupportedFlavorException e) {
+					// try the next flavor
+				}
+				catch (final IOException e) {
+					// try the next flavor
+				}
+			}
+		}
+		// 2. Fall back to the legacy image flavor (CF_DIB on Windows).
+		if (t.isDataFlavorSupported(DataFlavor.imageFlavor)) {
+			try {
+				return (BufferedImage) t.getTransferData(DataFlavor.imageFlavor);
+			}
+			catch (final UnsupportedFlavorException e) {
+			}
+			catch (final IOException e) {
+			}
+		}
+		return null;
+	}
+
 	private static final Pattern HEADER_REGEX = Pattern.compile("h(\\d)", Pattern.CASE_INSENSITIVE);
 	private static final Pattern HREF_PATTERN = Pattern
 	    .compile("<html>\\s*<body>\\s*<a\\s+href=\"([^>]+)\">(.*)</a>\\s*</body>\\s*</html>");
@@ -569,15 +672,9 @@ public class MClipboardController extends ClipboardController {
 			catch (final IOException e) {
 			}
 		}
-		if (t.isDataFlavorSupported(DataFlavor.imageFlavor)) {
-			try {
-				BufferedImage image = (BufferedImage) t.getTransferData(DataFlavor.imageFlavor);
-				return new ImageFlavorHandler(image);
-			}
-			catch (final UnsupportedFlavorException e) {
-			}
-			catch (final IOException e) {
-			}
+		final BufferedImage image = readImageFromClipboard(t);
+		if (image != null) {
+			return new ImageFlavorHandler(image);
 		}
 		return null;
 	}
@@ -645,15 +742,9 @@ public class MClipboardController extends ClipboardController {
 			catch (final IOException e) {
 			}
 		}
-		if (t.isDataFlavorSupported(DataFlavor.imageFlavor)) {
-			try {
-				BufferedImage image = (BufferedImage) t.getTransferData(DataFlavor.imageFlavor);
-				handlerList.add(new ImageFlavorHandler(image));
-			}
-			catch (final UnsupportedFlavorException e) {
-			}
-			catch (final IOException e) {
-			}
+		final BufferedImage image = readImageFromClipboard(t);
+		if (image != null) {
+			handlerList.add(new ImageFlavorHandler(image));
 		}
 		return handlerList;
 	}
