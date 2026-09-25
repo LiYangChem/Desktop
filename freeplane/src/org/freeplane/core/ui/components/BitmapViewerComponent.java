@@ -42,6 +42,7 @@ import org.freeplane.core.resources.ResourceController;
 import org.freeplane.core.util.LogUtils;
 
 import com.thebuzzmedia.imgscalr.AsyncScalr;
+import com.thebuzzmedia.imgscalr.Scalr;
 
 /**
  * @author Dimitry Polivaev
@@ -139,60 +140,89 @@ public class BitmapViewerComponent extends JComponent {
 		if(cachedImage == null && cacheFile != null)
 			loadImageFromCacheFile();
 		if(! isCachedImageValid()){
-			BufferedImage tempImage;
-	        try {
-	        	tempImage = ImageIO.read(url);
-	        }
-	        catch (IOException e) {
-				return;
-	        }
-	        final BufferedImage image = tempImage;
-			final int imageWidth = image.getWidth();
-			final int imageHeight = image.getHeight();
-			if(imageWidth == 0 || imageHeight == 0){
-				return;
-			}
 			processing = true;
-			final Future<BufferedImage> result = AsyncScalr.resize(image, getWidth(),getHeight());
-			AsyncScalr.getService().submit(new Runnable() {
-				public void run() {
-					BufferedImage scaledImage = null;
-					try {
-						scaledImage = result.get();
-					} catch (Exception e) {
-						LogUtils.severe(e);
-						return;
-					}
-					finally{
-						image.flush();
-					}
-					final int scaledImageHeight = scaledImage.getHeight();
-					final int scaledImageWidth = scaledImage.getWidth();
-					if (scaledImageHeight > getHeight()) {
-						imageX = 0;
-						imageY = (getHeight() - scaledImageHeight) / 2;
-					}
-					else {
-						imageX = (getWidth() - scaledImageWidth) / 2;
-						imageY = 0;
-					}
-					cachedImage = scaledImage;
-					if(getCacheType().equals(CacheType.IC_FILE))
-						writeCacheFile();
-					EventQueue.invokeLater(new Runnable() {
-						
-						public void run() {
-							processing = false;
-							repaint();
-						}
-					});
-				}
-			});
+			submitScalingTask(null);
 		}
 		else{
 			g.drawImage(cachedImage, imageX, imageY, null);
 			flushImage();
 		}
+	}
+
+	/**
+	 * Performs the scaling work off the EDT (F1): the original image is
+	 * decoded on the scaling thread instead of the painting thread, so the
+	 * UI never blocks on image I/O while zooming.
+	 * F4: every failure path (including Errors) hands back to the EDT and
+	 * resets the "processing" flag, so a failed scaling can never blank the
+	 * component forever.
+	 * F2: after each scaling step the EDT re-checks the current component
+	 * size; if it changed again while scaling (e.g. the user kept zooming),
+	 * the already decoded original is rescaled directly instead of repeating
+	 * the whole decode+submit round-trip per zoom step.
+	 *
+	 * @param original the already decoded image to rescale, or null to read
+	 *            it from the URL first
+	 */
+	private void submitScalingTask(final BufferedImage original) {
+		final int targetWidth = getWidth();
+		final int targetHeight = getHeight();
+		AsyncScalr.getService().submit(new Runnable() {
+			public void run() {
+				BufferedImage decoded = null;
+				try {
+					decoded = (original != null) ? original : ImageIO.read(url);
+					if(decoded == null || decoded.getWidth() == 0 || decoded.getHeight() == 0)
+						throw new IOException("can not read image " + url);
+					final BufferedImage scaledImage = Scalr.resize(decoded, targetWidth, targetHeight);
+					final int scaledImageHeight = scaledImage.getHeight();
+					final int scaledImageWidth = scaledImage.getWidth();
+					if (scaledImageHeight > targetHeight) {
+						imageX = 0;
+						imageY = (targetHeight - scaledImageHeight) / 2;
+					}
+					else {
+						imageX = (targetWidth - scaledImageWidth) / 2;
+						imageY = 0;
+					}
+					cachedImage = scaledImage;
+					if(getCacheType().equals(CacheType.IC_FILE))
+						writeCacheFile();
+					continueOrFinishScaling(decoded);
+				}
+				catch (Throwable t) {
+					LogUtils.severe(t);
+					if(decoded != null)
+						decoded.flush();
+					continueOrFinishScaling(null);
+				}
+			}
+		});
+	}
+
+	/**
+	 * Called on the scaling thread, hands the control back to the EDT.
+	 * On the EDT the "processing" flag is reset and, if the component was
+	 * resized again in the meantime, the next scaling step is enqueued
+	 * reusing the already decoded original (F2). On the failure path
+	 * (original == null) the flag is only reset; the next external paint
+	 * event will retry, so no automatic retry loop is started.
+	 */
+	private void continueOrFinishScaling(final BufferedImage original) {
+		EventQueue.invokeLater(new Runnable() {
+			public void run() {
+				processing = false;
+				if (original == null)
+					return;
+				if (! isCachedImageValid() && getWidth() != 0 && getHeight() != 0){
+					processing = true;
+					submitScalingTask(original);
+					return;
+				}
+				original.flush();
+				repaint();
+			}
+		});
 	}
 
 	private void flushImage() {
